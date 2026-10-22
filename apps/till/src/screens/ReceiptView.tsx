@@ -1,13 +1,19 @@
 import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 import { Modal } from "../components/Modal.js";
 import { db, type DeviceSetup, type LocalOrder, type User } from "../lib/db.js";
 import { money, qtyText } from "../lib/format.js";
+import { needsDrawer, printOnHub, receiptDoc } from "../lib/print.js";
+import { useSyncStatus } from "../lib/useSync.js";
+
+/** Orders already sent to the printer, so a re-render (or React's dev double effect) never prints twice. */
+const autoPrinted = new Set<string>();
 
 /**
  * Bilingual simplified tax invoice (or tax credit note for refunds) with the fields UAE
  * VAT rules ask for: seller name, address and TRN, date, sequential number, items, VAT
- * amount and the total including VAT. Printing goes through the browser for now; the
- * store hub will send the same content to ESC/POS printers.
+ * amount and the total including VAT. With a store hub that has a printer, the receipt
+ * prints there by itself and a cash sale opens the drawer; otherwise the browser prints.
  */
 export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceSetup; order: LocalOrder; cashier: User; onClose: () => void }) {
   const original = useLiveQuery(
@@ -22,6 +28,32 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
     timeZone: setup.store.timezone,
   }).format(new Date(order.createdAt));
   const uomOf = (qty: number) => (Number.isInteger(qty) ? "unit" : "kg");
+  const hubPrinter = useSyncStatus().hub?.printer ?? null;
+  const [printError, setPrintError] = useState<string | null>(null);
+
+  const printHere = async (first: boolean) => {
+    const methodRows = await db.paymentMethods.toArray();
+    const originalNumber = order.refundOfOrderId ? (await db.orders.get(order.refundOfOrderId))?.number : undefined;
+    const doc = receiptDoc(setup, order, {
+      cashierName: cashier.name,
+      methods: methodRows,
+      originalNumber,
+      openDrawer: first && needsDrawer(order),
+    });
+    try {
+      await printOnHub(doc);
+      setPrintError(null);
+    } catch (err) {
+      setPrintError(`Printer: ${(err as Error).message}`);
+    }
+  };
+
+  useEffect(() => {
+    if (!hubPrinter || autoPrinted.has(order.id)) return;
+    autoPrinted.add(order.id);
+    void printHere(true);
+    // Printing once per order is the point; later changes must not reprint.
+  }, [hubPrinter, order.id]);
 
   return (
     <Modal onClose={onClose}>
@@ -94,9 +126,10 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
         )}
         {setup.store.receiptFooter && <p className="r-center">{setup.store.receiptFooter}</p>}
       </div>
+      {printError && <p className="bad noprint">{printError}</p>}
       <div className="actions noprint">
-        <button type="button" className="btn ghost" onClick={() => window.print()}>
-          Print
+        <button type="button" className="btn ghost" onClick={() => (hubPrinter ? void printHere(false) : window.print())}>
+          {hubPrinter ? "Print again" : "Print"}
         </button>
         <button type="button" className="btn primary" onClick={onClose} autoFocus>
           New sale
