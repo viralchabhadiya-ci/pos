@@ -15,6 +15,7 @@ Research: [Odoo POS Blueprint](https://claude.ai/artifact/1kkW4wY7pSKbTTkpX2akY4
 | `apps/api` | Backend API: Fastify + PostgreSQL. Device pairing, catalog sync, shifts and cash control, idempotent order sync, refunds, stock ledger, daily report, audit log. |
 | `apps/till` | Till app: React + Vite PWA with a local IndexedDB database and an outbox. Pair, PIN login, open shift, sell, split payment, bilingual tax invoice, refund, cash in/out, close shift. |
 | `apps/hub` | Store hub: a small Node service on one PC in the shop. Tills connect to it; it forwards to the cloud, queues everything while the internet is down, lets tills find each other's sales offline, and drives the LAN receipt printer and cash drawer. |
+| `apps/backoffice` | Back office web app for owners and managers: sales dashboard, products and prices, categories, stock, staff and PINs, registers and device pairing, bill search and detail. Works on desktop and phone. |
 | `packages/escpos` | Printer-neutral receipt document and its ESC/POS encoding (text, rows, barcode, QR, cut, drawer kick) for 80 mm and 58 mm thermal printers. |
 
 ## Run it locally
@@ -29,11 +30,30 @@ export DATABASE_URL=postgres://postgres:postgres@localhost:5432/pos_dev
 pnpm --filter @pos/api seed    # demo Dubai minimart; prints a pairing code
 pnpm dev:api                   # http://localhost:3000
 pnpm dev:till                  # http://localhost:5173
+pnpm dev:backoffice            # http://localhost:5174
 ```
 
 Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and open a shift.
 The manager PIN `9999` approves price changes, discounts above 10% and voids.
-A new pairing code: `pnpm --filter @pos/api pair <registerId>`.
+A new pairing code: `pnpm --filter @pos/api pair <registerId>`, or **Tills & devices → Pair a device** in the back office.
+
+### Back office
+
+Sign in at http://localhost:5174 with `owner@demo.ae` / `demo1234`. Owners and managers sign in with
+email and password; cashiers only use their PIN on the till. In development Vite forwards `/admin` to the
+API on port 3000 (set `API_URL` to change it); a production build calls `VITE_API_URL`.
+
+- **Dashboard:** the day's sales, bills, average bill, VAT, refunds, sales by hour, cash vs card,
+  top products, the last 7 days and the latest bills. Days follow the store's timezone.
+- **Products and categories:** price, barcode, Arabic name, VAT, per piece or per kg, hide from tills.
+  Changes reach the tills on their next catalog sync, about a minute. Stock: goods received and corrections.
+- **Staff:** add cashiers and managers, reset PINs, switch people off. PINs must be different for every
+  active person, because the till knows who you are from the PIN alone. Managers can only manage cashiers.
+- **Tills & devices:** add registers, get a 6-digit pairing code (15 minutes, works once), remove a lost
+  device so its token stops working.
+- **Sales:** search bills by number and date, open a bill to see items, VAT, payments and linked refunds.
+
+Every change is written to the audit log with who made it.
 
 ### With a store hub
 
@@ -65,7 +85,7 @@ The hub's data folder holds device tokens, so keep it on the store PC.
 ## Tests
 
 ```bash
-pnpm test        # core engine, ESC/POS, API and hub integration (need Postgres), till logic
+pnpm test        # core engine, ESC/POS, API, back office API and hub integration (need Postgres), till logic
 pnpm typecheck
 ```
 
@@ -87,5 +107,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Integrated card terminal, customer display pairing, Arabic raster receipts, back office web app,
-owner app. See the roadmap in the PRD.
+Super admin (businesses, subscriptions, support), integrated card terminal, customer display,
+Arabic raster receipts, Windows/Android packaging, owner app. See the roadmap in the PRD.
