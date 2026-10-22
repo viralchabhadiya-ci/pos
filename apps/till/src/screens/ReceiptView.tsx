@@ -1,5 +1,6 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
+import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
 import { db, type DeviceSetup, type LocalOrder, type User } from "../lib/db.js";
 import { money, qtyText } from "../lib/format.js";
@@ -56,11 +57,28 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
   }, [hubPrinter, order.id]);
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} label={refund ? "Refund complete" : "Sale complete"}>
+      <div className="done-head noprint">
+        <span className="tick" aria-hidden="true">
+          <Icon name="check" size={24} />
+        </span>
+        <div>
+          <h2>{refund ? "Refund complete" : "Sale complete"}</h2>
+          {order.payment.change > 0 ? (
+            <p className="good" style={{ margin: 0, fontWeight: 700 }}>
+              Give change {money(order.payment.change)} AED
+            </p>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              {hubPrinter ? "Receipt sent to the printer." : order.number}
+            </p>
+          )}
+        </div>
+      </div>
       <div className="receipt" id="receipt">
         <div className="r-center">
           <strong>{setup.store.name}</strong>
-          {setup.store.nameAr && <div dir="rtl">{setup.store.nameAr}</div>}
+          {setup.store.nameAr && <div dir="rtl" lang="ar">{setup.store.nameAr}</div>}
           {setup.store.address && <div>{setup.store.address}</div>}
           {setup.store.trn && <div>TRN / الرقم الضريبي: {setup.store.trn}</div>}
           <div className="r-title">{refund ? "Tax Credit Note / إشعار دائن ضريبي" : "Tax Invoice / فاتورة ضريبية"}</div>
@@ -126,12 +144,18 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
         )}
         {setup.store.receiptFooter && <p className="r-center">{setup.store.receiptFooter}</p>}
       </div>
-      {printError && <p className="bad noprint">{printError}</p>}
+      {printError && (
+        <p className="error noprint" role="alert">
+          <Icon name="alert" size={18} />
+          {printError}
+        </p>
+      )}
       <div className="actions noprint">
-        <button type="button" className="btn ghost" onClick={() => (hubPrinter ? void printHere(false) : window.print())}>
+        <button type="button" className="btn outline" onClick={() => (hubPrinter ? void printHere(false) : window.print())}>
+          <Icon name="printer" />
           {hubPrinter ? "Print again" : "Print"}
         </button>
-        <button type="button" className="btn primary" onClick={onClose} autoFocus>
+        <button type="button" className="btn primary lg" onClick={onClose} autoFocus>
           New sale
         </button>
       </div>

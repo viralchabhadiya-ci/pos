@@ -1,6 +1,7 @@
 import { checkPayments, type PaymentInput } from "@pos/core";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
+import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
 import type { Cart } from "../lib/cart.js";
 import { db, type DeviceSetup, type LocalOrder, type PaymentMethod } from "../lib/db.js";
@@ -68,32 +69,44 @@ export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel 
   };
 
   return (
-    <Modal onClose={busy ? undefined : onCancel} wide>
-      <div className="pay">
+    <Modal onClose={busy ? undefined : onCancel} wide label={refund ? "Refund" : "Payment"}>
+      <div className="paydlg">
         <div>
           <h2>{refund ? "Refund" : "Payment"}</h2>
-          <p className="due">
-            {check.complete ? "Paid" : refund ? "To refund" : "Due"}{" "}
+          <p className={check.complete ? "due done" : "due"} aria-live="polite">
+            {check.complete ? "Paid in full" : refund ? "To refund" : "Amount due"}
             <strong>{aed(Math.abs(check.complete ? check.due : check.remaining))}</strong>
           </p>
           {check.cashRounding !== 0 && <p className="muted">Cash rounding {money(check.cashRounding)}</p>}
           <ul className="paylist">
             {payments.map((p) => (
               <li key={p.id}>
+                <Icon name={p.kind === "cash" ? "cash" : "card"} />
                 <span>{methods.find((m) => m.id === p.methodId)?.name}</span>
-                <span>{money(p.amount)}</span>
-                <button type="button" className="link" onClick={() => setPayments(payments.filter((x) => x.id !== p.id))}>
-                  Remove
+                <span className="amt">{money(p.amount)}</span>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove ${methods.find((m) => m.id === p.methodId)?.name ?? "payment"} ${money(p.amount)}`}
+                  onClick={() => setPayments(payments.filter((x) => x.id !== p.id))}
+                  disabled={busy}
+                >
+                  <Icon name="close" />
                 </button>
               </li>
             ))}
           </ul>
           {check.change > 0 && (
-            <p className="change">
-              Change <strong>{aed(check.change)}</strong>
+            <p className="change" aria-live="polite">
+              Give change <strong>{aed(check.change)}</strong>
             </p>
           )}
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              <Icon name="alert" size={18} />
+              {error}
+            </p>
+          )}
         </div>
         <div>
           {!check.complete && (
@@ -106,14 +119,19 @@ export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel 
                 value={entry}
                 onChange={(e) => setEntry(e.target.value)}
                 disabled={refund}
+                aria-describedby="tendered-help"
+                autoComplete="off"
                 autoFocus
               />
+              <p id="tendered-help" className="muted" style={{ marginTop: 8, fontSize: 14 }}>
+                {refund ? "Refunds go back in full to the method you pick." : "Leave empty to pay exactly what is due, or tap a note."}
+              </p>
               {!refund && (
                 <div className="quick">
                   {QUICK_CASH.filter((q) => q >= dueIfCash).slice(0, 4).map((q) => {
                     const cash = methods.find((m) => m.kind === "cash");
                     return (
-                      <button key={q} type="button" className="chip" disabled={!cash} onClick={() => cash && addPayment(cash, q)}>
+                      <button key={q} type="button" className="chip" disabled={!cash} onClick={() => cash && addPayment(cash, q)} aria-label={`Cash ${money(q)} AED`}>
                         {money(q)}
                       </button>
                     );
@@ -123,6 +141,7 @@ export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel 
               <div className="methods">
                 {methods.map((m) => (
                   <button key={m.id} type="button" className="btn method" onClick={() => addPayment(m)}>
+                    <Icon name={m.kind === "cash" ? "cash" : "card"} />
                     {m.name}
                   </button>
                 ))}
@@ -133,7 +152,8 @@ export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel 
             <button type="button" className="btn ghost" onClick={onCancel} disabled={busy}>
               Back
             </button>
-            <button type="button" className="btn primary" disabled={!check.complete || busy} onClick={finish} autoFocus={check.complete}>
+            <button type="button" className="btn primary lg" disabled={!check.complete || busy} onClick={finish} autoFocus={check.complete}>
+              <Icon name="check" />
               {busy ? "Saving…" : refund ? "Complete refund" : "Complete sale"}
             </button>
           </div>
