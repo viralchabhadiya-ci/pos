@@ -43,11 +43,42 @@ importers:
         specifier: ^4.19.2
         version: 4.23.15
 
+  apps/hub:
+    dependencies:
+      '@fastify/cors':
+        specifier: ^10.0.1
+        version: 10.1.0
+      '@pos/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pos/escpos':
+        specifier: workspace:*
+        version: link:../../packages/escpos
+      fastify:
+        specifier: ^5.2.0
+        version: 5.12.7
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.23.1
+      pg:
+        specifier: ^8.13.1
+        version: 8.23.1
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.15
+
   apps/till:
     dependencies:
       '@pos/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@pos/escpos':
+        specifier: workspace:*
+        version: link:../../packages/escpos
       dexie:
         specifier: ^4.0.10
         version: 4.4.6
@@ -85,6 +116,8 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/escpos: {}
 
 packages:
 

@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { ManagerPin } from "../components/ManagerPin.js";
 import { Modal } from "../components/Modal.js";
 import type { Session, User } from "../lib/db.js";
 import { tryParseMoney } from "../lib/format.js";
+import { openDrawerOnHub } from "../lib/print.js";
 import { addCashMove } from "../lib/till.js";
+import { useSyncStatus } from "../lib/useSync.js";
 
 interface Props {
   session: Session;
@@ -17,6 +20,24 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [drawerPin, setDrawerPin] = useState(false);
+  const hasDrawer = !!useSyncStatus().hub?.printer;
+
+  const openDrawer = async () => {
+    setDrawerPin(false);
+    try {
+      await openDrawerOnHub();
+      setDone("Drawer opened");
+      setError(null);
+    } catch (err) {
+      setError(`Drawer: ${(err as Error).message}`);
+    }
+  };
+
+  if (drawerPin) {
+    return <ManagerPin reason="Open the cash drawer without a sale" onApprove={() => void openDrawer()} onCancel={() => setDrawerPin(false)} />;
+  }
 
   const saveCash = async () => {
     const minor = tryParseMoney(amount);
@@ -50,8 +71,12 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
         <div className="menu">
           <h2>Menu</h2>
           {done && <p className="good">{done}</p>}
+          {error && <p className="bad">{error}</p>}
           <button type="button" className="btn block" onClick={() => setCash("in")}>Cash in</button>
           <button type="button" className="btn block" onClick={() => setCash("out")}>Cash out</button>
+          {hasDrawer && (
+            <button type="button" className="btn block" onClick={() => setDrawerPin(true)}>Open drawer</button>
+          )}
           <button type="button" className="btn block" onClick={onCloseShift}>Close shift</button>
           <button type="button" className="btn block ghost" onClick={onLogout}>Switch cashier</button>
         </div>

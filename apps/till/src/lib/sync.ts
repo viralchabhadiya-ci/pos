@@ -2,15 +2,25 @@ import { liveQuery } from "dexie";
 import { request, ApiError, OfflineError } from "./api.js";
 import { db, type OutboxItem } from "./db.js";
 
+/** What the store hub reports when the till is connected through one. */
+export interface HubInfo {
+  cloudOnline: boolean;
+  pending: number;
+  rejected: number;
+  printer: { width: number } | null;
+}
+
 export interface SyncStatus {
   online: boolean;
+  /** Null when the till talks to the cloud directly. */
+  hub: HubInfo | null;
   pending: number;
   failed: number;
   lastSyncAt: string | null;
   lastError: string | null;
 }
 
-let status: SyncStatus = { online: navigator.onLine, pending: 0, failed: 0, lastSyncAt: null, lastError: null };
+let status: SyncStatus = { online: navigator.onLine, hub: null, pending: 0, failed: 0, lastSyncAt: null, lastError: null };
 const listeners = new Set<() => void>();
 
 function setStatus(patch: Partial<SyncStatus>) {
@@ -123,12 +133,24 @@ async function refreshCounts() {
   setStatus({ pending, failed });
 }
 
+/** The cloud API answers 404 here; only a hub knows this route. */
+async function refreshHub() {
+  try {
+    const info = await request<HubInfo & { hub?: boolean }>("/hub/info");
+    setStatus({ hub: info.hub ? info : null });
+  } catch (err) {
+    if (err instanceof ApiError) setStatus({ hub: null });
+    else throw err;
+  }
+}
+
 let running = false;
 
 export async function syncNow() {
   if (running) return;
   running = true;
   try {
+    await refreshHub();
     await pushOutbox();
     await pullCatalog();
     setStatus({ online: true, lastSyncAt: new Date().toISOString(), lastError: null });
