@@ -5,7 +5,7 @@ export async function loadDeviceSetup(db: Db, registerId: string, role: "till" |
   const { rows } = await db.query(
     `SELECT r.id AS register_id, r.code AS register_code, r.name AS register_name,
             s.id AS store_id, s.code AS store_code, s.name AS store_name, s.name_ar AS store_name_ar,
-            s.address, s.trn, s.timezone, s.cash_rounding_step, s.receipt_footer,
+            s.address, s.phone, s.trn, s.timezone, s.cash_rounding_step, s.receipt_footer,
             t.id AS tenant_id, t.name AS tenant_name, t.currency
        FROM registers r JOIN stores s ON s.id = r.store_id JOIN tenants t ON t.id = s.tenant_id
       WHERE r.id = $1`,
@@ -28,6 +28,7 @@ export async function loadDeviceSetup(db: Db, registerId: string, role: "till" |
       name: r.store_name,
       nameAr: r.store_name_ar,
       address: r.address,
+      phone: r.phone,
       trn: r.trn,
       timezone: r.timezone,
       cashRoundingStep: r.cash_rounding_step,

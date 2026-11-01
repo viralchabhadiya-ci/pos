@@ -64,8 +64,10 @@ export async function seed(
       storeId,
     ]);
     await tx.query(
-      "INSERT INTO taxes (id, tenant_id, name, rate_bp, price_included) VALUES ($1, $2, 'VAT 5%', 500, true)",
-      [vatId, tenantId],
+      `INSERT INTO taxes (id, tenant_id, name, rate_bp, price_included, kind) VALUES
+         ($1, $2, 'VAT 5%', 500, true, 'standard'), ($3, $2, 'Zero-rated 0%', 0, true, 'zero'),
+         ($4, $2, 'Exempt', 0, true, 'exempt')`,
+      [vatId, tenantId, randomUUID(), randomUUID()],
     );
 
     const cashier = hashPin(opts.cashierPin ?? "1234");
