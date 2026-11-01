@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "../components/Icon.js";
 import { ManagerPin } from "../components/ManagerPin.js";
 import { Modal } from "../components/Modal.js";
 import type { Session, User } from "../lib/db.js";
@@ -41,7 +42,10 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
 
   const saveCash = async () => {
     const minor = tryParseMoney(amount);
-    if (!cash || minor === null || minor <= 0 || !reason.trim()) return;
+    if (!cash) return;
+    if (minor === null || minor <= 0) return setError("Enter an amount, e.g. 200.00");
+    if (!reason.trim()) return setError("Add a reason so the manager can match it later");
+    setError(null);
     await addCashMove(session.id, user.id, cash, minor, reason.trim());
     setDone(`Recorded cash ${cash === "in" ? "in" : "out"} of ${amount}`);
     setCash(null);
@@ -50,7 +54,7 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
   };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} label={cash ? `Cash ${cash}` : "Menu"}>
       {cash ? (
         <>
           <h2>Cash {cash}</h2>
@@ -58,8 +62,14 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
           <input id="cm-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
           <label htmlFor="cm-reason">Reason</label>
           <input id="cm-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={cash === "out" ? "Bank drop, supplier payment…" : "Change top-up…"} />
+          {error && (
+            <p className="error" role="alert">
+              <Icon name="alert" size={18} />
+              {error}
+            </p>
+          )}
           <div className="actions">
-            <button type="button" className="btn ghost" onClick={() => setCash(null)}>
+            <button type="button" className="btn ghost" onClick={() => { setCash(null); setError(null); }}>
               Back
             </button>
             <button type="button" className="btn primary" onClick={saveCash}>
@@ -70,15 +80,43 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
       ) : (
         <div className="menu">
           <h2>Menu</h2>
-          {done && <p className="good">{done}</p>}
-          {error && <p className="bad">{error}</p>}
-          <button type="button" className="btn block" onClick={() => setCash("in")}>Cash in</button>
-          <button type="button" className="btn block" onClick={() => setCash("out")}>Cash out</button>
-          {hasDrawer && (
-            <button type="button" className="btn block" onClick={() => setDrawerPin(true)}>Open drawer</button>
+          <div role="status" aria-live="polite">
+            {done && (
+              <p className="good" style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 600 }}>
+                <Icon name="check" size={18} />
+                {done}
+              </p>
+            )}
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              <Icon name="alert" size={18} />
+              {error}
+            </p>
           )}
-          <button type="button" className="btn block" onClick={onCloseShift}>Close shift</button>
-          <button type="button" className="btn block ghost" onClick={onLogout}>Switch cashier</button>
+          <button type="button" className="btn block" onClick={() => setCash("in")}>
+            <Icon name="cash" />
+            Cash in
+          </button>
+          <button type="button" className="btn block" onClick={() => setCash("out")}>
+            <Icon name="cash" />
+            Cash out
+          </button>
+          {hasDrawer && (
+            <button type="button" className="btn block" onClick={() => setDrawerPin(true)}>
+              <Icon name="drawer" />
+              Open drawer
+            </button>
+          )}
+          <hr />
+          <button type="button" className="btn block ghost" onClick={onLogout}>
+            <Icon name="logout" />
+            Switch cashier
+          </button>
+          <button type="button" className="btn block outline danger" onClick={onCloseShift}>
+            <Icon name="lock" />
+            Close shift
+          </button>
         </div>
       )}
     </Modal>

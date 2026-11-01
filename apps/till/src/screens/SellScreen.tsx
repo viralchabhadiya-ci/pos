@@ -1,7 +1,9 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Icon } from "../components/Icon.js";
 import { ManagerPin } from "../components/ManagerPin.js";
 import { Modal } from "../components/Modal.js";
+import { Toast } from "../components/Toast.js";
 import { addItem, cartTotals, emptyCart, needsManager, removeLine, updateLine, type Cart, type SellableItem } from "../lib/cart.js";
 import { db, type DeviceSetup, type LocalOrder, type Session, type User } from "../lib/db.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
@@ -11,6 +13,7 @@ import { ReceiptView } from "./ReceiptView.js";
 import { RefundDialog } from "./RefundDialog.js";
 
 type PadMode = "qty" | "disc" | "price";
+const MODE_LABEL: Record<PadMode, string> = { qty: "Qty", disc: "% Disc", price: "Price" };
 
 interface Props {
   setup: DeviceSetup;
@@ -88,6 +91,11 @@ export function SellScreen({ setup, user }: Props) {
 
   const selectedLine = cart.lines.find((l) => l.id === selected);
 
+  // Keep the line being edited (usually the one just scanned) in view.
+  useEffect(() => {
+    if (selected) document.querySelector(".line.on")?.scrollIntoView({ block: "nearest" });
+  }, [selected, cart.lines.length]);
+
   const applyEntry = () => {
     if (!selectedLine || entry === "") return;
     const value = Number(entry);
@@ -123,6 +131,8 @@ export function SellScreen({ setup, user }: Props) {
     setSelected(null);
   };
 
+  const clearNotice = useCallback(() => setNotice(null), []);
+
   const clear = () => {
     if (cart.lines.length && !isRefund) {
       setApproval({
@@ -140,9 +150,15 @@ export function SellScreen({ setup, user }: Props) {
 
   return (
     <div className="sell">
-      <section className="catalog">
+      <h1 className="sr-only">Sell</h1>
+      <section className="catalog" aria-label="Products">
         <div className="searchrow">
-          <input
+          <div className="searchbox">
+            <label htmlFor="search" className="sr-only">
+              Search products or scan a barcode
+            </label>
+            <Icon name="search" />
+            <input
             id="search"
             type="search"
             placeholder="Search name or scan barcode"
@@ -158,17 +174,20 @@ export function SellScreen({ setup, user }: Props) {
                 setSearch("");
               }
             }}
+            autoComplete="off"
           />
-          <button type="button" className="btn ghost" onClick={() => setRefunding(true)}>
+          </div>
+          <button type="button" className="btn outline" onClick={() => setRefunding(true)}>
+            <Icon name="refund" />
             Refund
           </button>
         </div>
         <nav className="cats" aria-label="Categories">
-          <button type="button" className={categoryId === null ? "chip on" : "chip"} onClick={() => setCategoryId(null)}>
+          <button type="button" className={categoryId === null ? "chip on" : "chip"} aria-pressed={categoryId === null} onClick={() => setCategoryId(null)}>
             All
           </button>
           {categories.map((c) => (
-            <button key={c.id} type="button" className={categoryId === c.id ? "chip on" : "chip"} onClick={() => setCategoryId(c.id)}>
+            <button key={c.id} type="button" className={categoryId === c.id ? "chip on" : "chip"} aria-pressed={categoryId === c.id} onClick={() => setCategoryId(c.id)}>
               {c.name}
             </button>
           ))}
@@ -178,29 +197,45 @@ export function SellScreen({ setup, user }: Props) {
             <button key={i.variantId} type="button" className="tile" onClick={() => add(i)}>
               <span className="name">{i.name}</span>
               {i.nameAr && (
-                <span className="name-ar" dir="rtl">
+                <span className="name-ar" dir="rtl" lang="ar">
                   {i.nameAr}
                 </span>
               )}
               <span className="price">
                 {money(i.price)}
-                {i.uom === "kg" ? " /kg" : ""}
+                {i.uom === "kg" && <span className="unit"> / kg</span>}
               </span>
             </button>
           ))}
-          {items && visible.length === 0 && <p className="muted">No products match.</p>}
+          {items && visible.length === 0 && (
+            <div className="no-results">
+              <p>No products match “{search || categories.find((c) => c.id === categoryId)?.name}”.</p>
+              <button
+                type="button"
+                className="btn outline"
+                onClick={() => {
+                  setSearch("");
+                  setCategoryId(null);
+                }}
+              >
+                Show all products
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
       <section className="cart" aria-label="Current sale">
-        <div className="cart-head">
-          <strong>{isRefund ? "Refund" : "Sale"}</strong>
-          <span className="muted">{cart.lines.length} lines</span>
+        <div className={isRefund ? "cart-head refund" : "cart-head"}>
+          <h2>{isRefund ? "Refund" : "Current sale"}</h2>
+          <span className="badge">
+            {cart.lines.length} {cart.lines.length === 1 ? "item" : "items"}
+          </span>
         </div>
         <ol className="lines">
           {cart.lines.map((l, idx) => (
             <li key={l.id}>
-              <button type="button" className={l.id === selected ? "line on" : "line"} onClick={() => setSelected(l.id)}>
+              <button type="button" className={l.id === selected ? "line on" : "line"} aria-pressed={l.id === selected} onClick={() => setSelected(l.id)}>
                 <span className="n">{idx + 1}</span>
                 <span className="desc">
                   {l.name}
@@ -213,7 +248,12 @@ export function SellScreen({ setup, user }: Props) {
               </button>
             </li>
           ))}
-          {cart.lines.length === 0 && <li className="empty muted">Scan or tap a product to start.</li>}
+          {cart.lines.length === 0 && (
+            <li className="empty">
+              <Icon name="search" size={32} />
+              Scan a barcode or tap a product to start.
+            </li>
+          )}
         </ol>
 
         <div className="totals">
@@ -238,36 +278,50 @@ export function SellScreen({ setup, user }: Props) {
         </div>
 
         <div className="padarea">
-          <div className="modes">
+          <div className={entry ? "entry typing" : "entry"} aria-live="polite">
+            {entry || (selectedLine ? `Edit ${MODE_LABEL[mode].toLowerCase()} of line ${cart.lines.indexOf(selectedLine) + 1}` : "Select a line to change it")}
+          </div>
+          <div className="numpad">
+            {["7", "8", "9", "back", "4", "5", "6", "1", "2", "3", ".", "0"].map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={k === "0" ? "key zero" : k === "back" ? "key subtle" : "key"}
+                style={{ gridArea: k === "back" ? "bk" : k === "." ? "dot" : `k${k}` }}
+                onClick={() => pad(k)}
+                aria-label={k === "back" ? "Delete last digit" : undefined}
+              >
+                {k === "back" ? <Icon name="backspace" /> : k}
+              </button>
+            ))}
+            <button type="button" className="key primary apply" style={{ gridArea: "ap" }} onClick={() => pad("enter")} disabled={!selectedLine || !entry}>
+              Apply
+            </button>
             {(["qty", "disc", "price"] as PadMode[]).map((m) => (
-              <button key={m} type="button" className={mode === m ? "mode on" : "mode"} onClick={() => setMode(m)}>
-                {m === "qty" ? "Qty" : m === "disc" ? "% Disc" : "Price"}
+              <button
+                key={m}
+                type="button"
+                className={mode === m ? "mode on" : "mode"}
+                style={{ gridArea: m }}
+                aria-pressed={mode === m}
+                onClick={() => setMode(m)}
+              >
+                {MODE_LABEL[m]}
               </button>
             ))}
             <button
               type="button"
-              className="mode"
+              className="mode danger"
+              style={{ gridArea: "del" }}
               disabled={!selectedLine}
+              aria-label="Delete selected line"
               onClick={() => {
                 if (!selectedLine) return;
                 setCart(removeLine(cart, selectedLine.id));
                 setSelected(null);
               }}
             >
-              Delete
-            </button>
-          </div>
-          <div className="entry" aria-live="polite">
-            {entry || (selectedLine ? `Edit ${mode} of line ${cart.lines.indexOf(selectedLine) + 1}` : "Select a line")}
-          </div>
-          <div className="numpad">
-            {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0", "back"].map((k) => (
-              <button key={k} type="button" className="key" onClick={() => pad(k)}>
-                {k === "back" ? "⌫" : k}
-              </button>
-            ))}
-            <button type="button" className="key wide" onClick={() => pad("enter")} disabled={!selectedLine}>
-              Apply
+              <Icon name="trash" size={18} />
             </button>
           </div>
           <div className="actions">
@@ -275,7 +329,8 @@ export function SellScreen({ setup, user }: Props) {
               Clear
             </button>
             <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={() => setPaying(true)}>
-              {isRefund ? "Refund" : "Pay"} {aed(totals.total)}
+              <span>{isRefund ? "Refund" : "Pay"}</span>
+              <span>{aed(totals.total)}</span>
             </button>
           </div>
         </div>
@@ -291,7 +346,18 @@ export function SellScreen({ setup, user }: Props) {
           onCancel={() => setPaying(false)}
         />
       )}
-      {receipt && <ReceiptView setup={setup} order={receipt} cashier={user} onClose={() => setReceipt(null)} />}
+      {receipt && (
+        <ReceiptView
+          setup={setup}
+          order={receipt}
+          cashier={user}
+          onClose={() => {
+            setReceipt(null);
+            // Ready for the next customer's first scan.
+            requestAnimationFrame(() => document.getElementById("search")?.focus());
+          }}
+        />
+      )}
       {weighing && (
         <WeighDialog
           item={weighing}
@@ -325,14 +391,7 @@ export function SellScreen({ setup, user }: Props) {
           }}
         />
       )}
-      {notice && (
-        <Modal onClose={() => setNotice(null)}>
-          <p>{notice}</p>
-          <button type="button" className="btn primary block" onClick={() => setNotice(null)} autoFocus>
-            OK
-          </button>
-        </Modal>
-      )}
+      <Toast message={notice} onDone={clearNotice} />
     </div>
   );
 }
@@ -342,12 +401,20 @@ function WeighDialog({ item, onWeight, onCancel }: { item: SellableItem; onWeigh
   const [kg, setKg] = useState("");
   const value = Number(kg);
   return (
-    <Modal onClose={onCancel}>
+    <Modal onClose={onCancel} label={`Weigh ${item.name}`}>
       <h2>{item.name}</h2>
-      <p className="muted">{money(item.price)} per kg</p>
+      <p className="muted">AED {money(item.price)} per kg</p>
       <label htmlFor="kg">Weight (kg)</label>
-      <input id="kg" inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value)} autoFocus />
-      {value > 0 && <p>Price: {aed(Math.round(item.price * value))}</p>}
+      <input
+        id="kg"
+        inputMode="decimal"
+        value={kg}
+        onChange={(e) => setKg(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && value > 0 && onWeight(value)}
+        placeholder="0.000"
+        autoFocus
+      />
+      <p className="muted" aria-live="polite">{value > 0 ? `Price: ${aed(Math.round(item.price * value))}` : "Put the item on the scale or type its weight."}</p>
       <button type="button" className="btn primary block" disabled={!(value > 0)} onClick={() => onWeight(value)}>
         Add
       </button>

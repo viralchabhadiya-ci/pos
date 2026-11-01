@@ -5,6 +5,7 @@ import { emptyCart, type Cart, type CartLine } from "../lib/cart.js";
 import { db } from "../lib/db.js";
 import { money } from "../lib/format.js";
 import { findSale } from "../lib/till.js";
+import { Icon } from "../components/Icon.js";
 
 interface SoldLine {
   variantId: string;
@@ -73,13 +74,18 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
   };
 
   return (
-    <Modal onClose={onCancel} wide>
+    <Modal onClose={onCancel} wide label="Refund">
       <h2>Refund</h2>
       {!sale ? (
         <form onSubmit={lookup}>
           <label htmlFor="rnum">Receipt number</label>
           <input id="rnum" value={number} onChange={(e) => setNumber(e.target.value.toUpperCase())} placeholder="DXB1-R1-0001-0001" autoFocus />
-          {error && <p className="error">{error}</p>}
+          {error && (
+          <p className="error" role="alert">
+            <Icon name="alert" size={18} />
+            {error}
+          </p>
+        )}
           <div className="actions">
             <button type="button" className="btn ghost" onClick={onCancel}>
               Cancel
@@ -96,18 +102,18 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
             <thead>
               <tr>
                 <th>Item</th>
-                <th>Sold</th>
-                <th>Price</th>
-                <th>Return</th>
+                <th style={{ textAlign: "right" }}>Sold</th>
+                <th style={{ textAlign: "right" }}>Price</th>
+                <th style={{ textAlign: "right" }}>Return</th>
               </tr>
             </thead>
             <tbody>
               {sale.lines.map((l, i) => (
                 <tr key={i}>
                   <td>{l.name}</td>
-                  <td>{l.qty}</td>
-                  <td>{money(l.unitPrice)}</td>
-                  <td>
+                  <td className="num">{l.qty}</td>
+                  <td className="num">{money(l.unitPrice)}</td>
+                  <td className="num">
                     <input
                       aria-label={`Return quantity for ${l.name}`}
                       inputMode="decimal"
@@ -119,7 +125,12 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
               ))}
             </tbody>
           </table>
-          {error && <p className="error">{error}</p>}
+          {error && (
+          <p className="error" role="alert">
+            <Icon name="alert" size={18} />
+            {error}
+          </p>
+        )}
           <div className="actions">
             <button type="button" className="btn ghost" onClick={onCancel}>
               Cancel
