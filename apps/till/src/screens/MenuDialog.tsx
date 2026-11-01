@@ -2,13 +2,14 @@ import { useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { ManagerPin } from "../components/ManagerPin.js";
 import { Modal } from "../components/Modal.js";
-import type { Session, User } from "../lib/db.js";
+import type { DeviceSetup, Session, User } from "../lib/db.js";
 import { tryParseMoney } from "../lib/format.js";
-import { openDrawerOnHub } from "../lib/print.js";
-import { addCashMove } from "../lib/till.js";
+import { openDrawerOnHub, printOnHub, shiftReportDoc } from "../lib/print.js";
+import { addCashMove, shiftSummary } from "../lib/till.js";
 import { useSyncStatus } from "../lib/useSync.js";
 
 interface Props {
+  setup: DeviceSetup;
   session: Session;
   user: User;
   onCloseShift: () => void;
@@ -16,7 +17,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: Props) {
+export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClose }: Props) {
   const [cash, setCash] = useState<"in" | "out" | null>(null);
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -34,6 +35,22 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
     } catch (err) {
       setError(`Drawer: ${(err as Error).message}`);
     }
+  };
+
+  const printX = async () => {
+    try {
+      await printOnHub(shiftReportDoc(setup, session, await shiftSummary(session), { kind: "X", userName: user.name }));
+      setDone("X report sent to the printer");
+      setError(null);
+    } catch (err) {
+      setError(`Printer: ${(err as Error).message}`);
+    }
+  };
+
+  const openCustomerScreen = () => {
+    // Drag this window to the customer-facing screen and make it full screen.
+    window.open(`${window.location.pathname}#display`, "pos-customer-display", "popup,width=1024,height=640");
+    setDone("Customer screen opened in a new window");
   };
 
   if (drawerPin) {
@@ -108,6 +125,16 @@ export function MenuDialog({ session, user, onCloseShift, onLogout, onClose }: P
               Open drawer
             </button>
           )}
+          {hasDrawer && (
+            <button type="button" className="btn block" onClick={() => void printX()}>
+              <Icon name="printer" />
+              Print X report
+            </button>
+          )}
+          <button type="button" className="btn block" onClick={openCustomerScreen}>
+            <Icon name="monitor" />
+            Customer screen on this PC
+          </button>
           <hr />
           <button type="button" className="btn block ghost" onClick={onLogout}>
             <Icon name="logout" />

@@ -5,7 +5,8 @@ import { ManagerPin } from "../components/ManagerPin.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
 import { addItem, cartTotals, emptyCart, needsManager, removeLine, updateLine, type Cart, type SellableItem } from "../lib/cart.js";
-import { db, type DeviceSetup, type LocalOrder, type Session, type User } from "../lib/db.js";
+import { db, type DeviceSetup, type LocalOrder, type ParkedSale, type Session, type User } from "../lib/db.js";
+import { publishDisplay, receiptUrl } from "../lib/display.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
 import { useScanner } from "../lib/useScanner.js";
 import { PaymentDialog } from "./PaymentDialog.js";
@@ -35,6 +36,9 @@ export function SellScreen({ setup, user }: Props) {
   const [approval, setApproval] = useState<{ reason: string; apply: () => void } | null>(null);
   const [refunding, setRefunding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noting, setNoting] = useState(false);
+  const [showParked, setShowParked] = useState(false);
+  const parkedCount = useLiveQuery(() => db.parked.count(), []) ?? 0;
 
   const categories = useLiveQuery(() => db.categories.orderBy("sort").filter((c) => c.active).toArray(), []) ?? [];
   const taxes = useLiveQuery(async () => Object.fromEntries((await db.taxes.toArray()).map((t) => [t.id, t])), []) ?? {};
@@ -72,6 +76,57 @@ export function SellScreen({ setup, user }: Props) {
 
   const totals = useMemo(() => cartTotals(cart, taxes), [cart, taxes]);
   const isRefund = cart.refundOfOrderId !== null;
+
+  // The customer display follows the cart, then shows the change and the receipt QR.
+  useEffect(() => {
+    const store = { storeName: setup.store.name, storeNameAr: setup.store.nameAr };
+    const zero = { lines: [], subtotalNet: 0, taxTotal: 0, discountTotal: 0, total: 0 };
+    if (receipt) {
+      const tendered = receipt.payments.reduce((sum, p) => sum + (p.tendered ?? p.amount), 0);
+      publishDisplay({
+        kind: "paid",
+        ...store,
+        ...zero,
+        total: receipt.totals.total,
+        paid: { due: receipt.payment.due, tendered, change: receipt.payment.change, receiptUrl: receiptUrl(setup.publicUrl, receipt.id) },
+      });
+    } else if (cart.lines.length === 0) {
+      publishDisplay({ kind: "idle", ...store, ...zero });
+    } else {
+      const arabic = new Map((items ?? []).map((i) => [i.variantId, i.nameAr]));
+      publishDisplay({
+        kind: "cart",
+        ...store,
+        refund: isRefund,
+        lines: cart.lines.map((l, i) => ({
+          name: l.name,
+          nameAr: arabic.get(l.variantId) ?? null,
+          qty: l.qty,
+          uom: l.uom,
+          gross: totals.lines[i]?.gross ?? 0,
+        })),
+        subtotalNet: totals.subtotalNet,
+        taxTotal: totals.taxTotal,
+        discountTotal: totals.discountTotal,
+        total: totals.total,
+      });
+    }
+  }, [cart, totals, receipt, items, isRefund, setup]);
+
+  /** Puts this sale aside so the next customer can be served. */
+  const park = async () => {
+    await db.parked.put({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), cashierName: user.name, cart, total: totals.total });
+    setCart(emptyCart());
+    setSelected(null);
+    setNotice("Sale parked. Open Parked to continue it.");
+  };
+
+  const resume = async (p: ParkedSale) => {
+    await db.parked.delete(p.id);
+    setCart(p.cart);
+    setSelected(null);
+    setShowParked(false);
+  };
 
   const add = (item: SellableItem, qty = 1) => {
     if (isRefund) return setNotice("Finish or clear the refund before adding items");
@@ -177,6 +232,12 @@ export function SellScreen({ setup, user }: Props) {
             autoComplete="off"
           />
           </div>
+          {parkedCount > 0 && (
+            <button type="button" className="btn outline" onClick={() => setShowParked(true)}>
+              <Icon name="pause" />
+              Parked <span className="count">{parkedCount}</span>
+            </button>
+          )}
           <button type="button" className="btn outline" onClick={() => setRefunding(true)}>
             <Icon name="refund" />
             Refund
@@ -243,6 +304,7 @@ export function SellScreen({ setup, user }: Props) {
                     {qtyText(l.qty, l.uom)} × {money(l.unitPrice)}
                     {l.discountBp ? ` · ${(l.discountBp / 100).toFixed(2)}% off` : ""}
                   </small>
+                  {l.note && <small className="muted note">“{l.note}”</small>}
                 </span>
                 <span className="amt">{money(totals.lines[idx]?.gross ?? 0)}</span>
               </button>
@@ -328,6 +390,18 @@ export function SellScreen({ setup, user }: Props) {
             <button type="button" className="btn ghost" onClick={clear} disabled={!cart.lines.length}>
               Clear
             </button>
+            {!isRefund && (
+              <>
+                <button type="button" className="btn ghost" onClick={() => setNoting(true)} disabled={!selectedLine}>
+                  <Icon name="note" size={18} />
+                  Note
+                </button>
+                <button type="button" className="btn ghost" onClick={() => void park()} disabled={!cart.lines.length}>
+                  <Icon name="pause" size={18} />
+                  Park
+                </button>
+              </>
+            )}
             <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={() => setPaying(true)}>
               <span>{isRefund ? "Refund" : "Pay"}</span>
               <span>{aed(totals.total)}</span>
@@ -391,8 +465,115 @@ export function SellScreen({ setup, user }: Props) {
           }}
         />
       )}
+      {noting && selectedLine && (
+        <NoteDialog
+          line={selectedLine.name}
+          initial={selectedLine.note ?? ""}
+          onCancel={() => setNoting(false)}
+          onSave={(note) => {
+            setCart((c) => updateLine(c, selectedLine.id, { note: note || undefined }));
+            setNoting(false);
+          }}
+        />
+      )}
+      {showParked && (
+        <ParkedDialog
+          busy={cart.lines.length > 0}
+          onResume={(p) => void resume(p)}
+          onDiscard={(p) => void db.parked.delete(p.id)}
+          onClose={() => setShowParked(false)}
+        />
+      )}
       <Toast message={notice} onDone={clearNotice} />
     </div>
+  );
+}
+
+function NoteDialog({ line, initial, onSave, onCancel }: { line: string; initial: string; onSave: (note: string) => void; onCancel: () => void }) {
+  const [note, setNote] = useState(initial);
+  return (
+    <Modal onClose={onCancel} label={`Note for ${line}`}>
+      <h2>Note for {line}</h2>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave(note.trim());
+        }}
+      >
+        <label htmlFor="line-note">Note (prints on the receipt)</label>
+        <input id="line-note" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="e.g. gift wrap, size swap" autoFocus />
+        <div className="actions">
+          {initial && (
+            <button type="button" className="btn ghost danger" onClick={() => onSave("")}>
+              Remove note
+            </button>
+          )}
+          <button type="submit" className="btn primary">
+            Save note
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Sales put aside on this till, oldest first. */
+function ParkedDialog({
+  busy,
+  onResume,
+  onDiscard,
+  onClose,
+}: {
+  busy: boolean;
+  onResume: (p: ParkedSale) => void;
+  onDiscard: (p: ParkedSale) => void;
+  onClose: () => void;
+}) {
+  const loaded = useLiveQuery(() => db.parked.orderBy("createdAt").toArray(), []);
+  const parked = loaded ?? [];
+  const [confirm, setConfirm] = useState<string | null>(null);
+  // Close by itself once the last parked sale is continued or discarded (not while loading).
+  useEffect(() => {
+    if (loaded && loaded.length === 0) onClose();
+  }, [loaded, onClose]);
+  return (
+    <Modal onClose={onClose} label="Parked sales" wide>
+      <h2>Parked sales</h2>
+      {busy && <p className="muted">Park or clear the current sale before you continue another one.</p>}
+      <ul className="parked">
+        {parked.map((p) => (
+          <li key={p.id}>
+            <span className="desc">
+              <strong>{aed(p.total)}</strong>
+              <small className="muted">
+                {p.cart.lines.length} {p.cart.lines.length === 1 ? "item" : "items"} · {p.cashierName} ·{" "}
+                {new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+              </small>
+              <small className="muted">{p.cart.lines.slice(0, 3).map((l) => l.name).join(", ")}{p.cart.lines.length > 3 ? "…" : ""}</small>
+            </span>
+            {confirm === p.id ? (
+              <>
+                <button type="button" className="btn ghost" onClick={() => setConfirm(null)}>
+                  Keep
+                </button>
+                <button type="button" className="btn outline danger" onClick={() => onDiscard(p)}>
+                  Yes, discard
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn ghost danger" onClick={() => setConfirm(p.id)}>
+                  Discard
+                </button>
+                <button type="button" className="btn primary" disabled={busy} onClick={() => onResume(p)}>
+                  Continue
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Modal>
   );
 }
 

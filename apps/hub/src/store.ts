@@ -26,6 +26,7 @@ export interface DeviceRow {
 export interface DeviceSetup {
   tenant: { id: string };
   register: { id: string };
+  device?: { role: "till" | "display" };
   lastSessionSeq: number;
   openSession: { id: string; seq: number; openedBy: string; openedAt: string; openingCash: number } | null;
   [key: string]: unknown;
