@@ -4,6 +4,7 @@ import { db, type DeviceSetup, type Session, type User } from "./lib/db.js";
 import { startSync } from "./lib/sync.js";
 import { currentSession, getSetup } from "./lib/till.js";
 import { CloseShiftScreen } from "./screens/CloseShiftScreen.js";
+import { DisplayScreen } from "./screens/DisplayScreen.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { MenuDialog } from "./screens/MenuDialog.js";
 import { OpenShiftScreen } from "./screens/OpenShiftScreen.js";
@@ -29,13 +30,18 @@ export function App() {
     void reload();
   }, []);
 
+  const isDisplay = setup?.device?.role === "display";
+  // A till can open a second window (#display) on another screen for the customer.
+  const secondWindow = window.location.hash === "#display";
+
   useEffect(() => {
-    if (!setup) return;
+    if (!setup || isDisplay || secondWindow) return;
     return startSync();
-  }, [setup]);
+  }, [setup, isDisplay, secondWindow]);
 
   if (!loaded) return null;
   if (!setup) return <PairScreen onPaired={reload} />;
+  if (isDisplay || secondWindow) return <DisplayScreen setup={setup} remote={isDisplay} />;
 
   const bar = <StatusBar setup={setup} user={user} session={session} onMenu={user && session ? () => setMenu(true) : undefined} />;
   const logout = () => {
@@ -49,6 +55,7 @@ export function App() {
   else if (closing)
     body = (
       <CloseShiftScreen
+        setup={setup}
         session={session}
         user={user}
         onCancel={() => setClosing(false)}
@@ -68,6 +75,7 @@ export function App() {
       {body}
       {menu && user && session && (
         <MenuDialog
+          setup={setup}
           session={session}
           user={user}
           onClose={() => setMenu(false)}

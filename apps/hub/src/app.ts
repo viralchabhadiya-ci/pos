@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import cors from "@fastify/cors";
-import { CashMoveSchema, OrderBatchSchema, SessionCloseSchema, SessionOpenSchema, type OrderSync } from "@pos/core";
+import { CashMoveSchema, DisplayRelay, DisplayStateSchema, OrderBatchSchema, SessionCloseSchema, SessionOpenSchema, type OrderSync } from "@pos/core";
 import { encodeDrawerKick, encodeReceipt, type ReceiptDoc } from "@pos/escpos";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
@@ -232,6 +232,25 @@ export async function buildHub(config: HubConfig, opts: { logger?: boolean; stor
     }
     app.log.info({ device: dev.registerId }, "cash drawer opened");
     return { ok: true };
+  });
+
+  // Customer display: the till and its display both talk to the hub, so it works offline.
+
+  const relay = new DisplayRelay();
+  app.addHook("onClose", async () => relay.close());
+
+  app.put("/display/state", async (req) => {
+    const dev = await device(req);
+    if (dev.setup.device?.role === "display") throw new HubError(403, "forbidden", "Only a till can update the customer display");
+    const state = DisplayStateSchema.parse((req.body as { state?: unknown })?.state);
+    return { version: relay.put(dev.registerId, state) };
+  });
+
+  app.get<{ Querystring: { after?: string; wait?: string } }>("/display/state", async (req) => {
+    const dev = await device(req);
+    const after = Math.max(0, Number(req.query.after) || 0);
+    const wait = Math.min(25_000, Math.max(0, Number(req.query.wait ?? 20_000) || 0));
+    return relay.get(dev.registerId, after, wait);
   });
 
   // Pairing goes to the cloud; the hub remembers the device it hands back.

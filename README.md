@@ -37,6 +37,23 @@ Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and ope
 The manager PIN `9999` approves price changes, discounts above 10% and voids.
 A new pairing code: `pnpm --filter @pos/api pair <registerId>`, or **Tills & devices → Pair a device** in the back office.
 
+### On the till
+
+- **Park a sale:** Park puts the cart aside so you can serve the next customer. Parked (with a count)
+  brings it back. Parked sales stay on that till, even after a restart.
+- **Line note:** select a line and tap Note (for example "no sugar"). It prints under the item and
+  shows on the digital receipt.
+- **X and Z reports:** Menu → Print X report prints the shift so far without closing it. Closing the
+  shift prints the Z report with the cash count and difference. Both need the hub printer.
+- **Digital receipt:** set `PUBLIC_URL` on the API to its public address. Every printed receipt then
+  carries a QR code that opens `/r/<order id>`, a bilingual tax invoice page the customer can keep.
+  The id is a random UUID, so only someone holding the receipt can open it.
+- **Customer display:** the screen the customer sees, with items in English and Arabic, totals, change
+  and the receipt QR after payment. Two ways:
+  - a second monitor on the same PC: Menu → Customer screen on this PC, then drag the window across;
+  - a separate tablet: in the back office get a pairing code for the register with the role
+    *display* and pair the tablet with it. It follows that register through the hub or the cloud.
+
 ### Back office
 
 Sign in at http://localhost:5174 with `owner@demo.ae` / `demo1234`. Owners and managers sign in with
@@ -107,5 +124,6 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Super admin (businesses, subscriptions, support), integrated card terminal, customer display,
-Arabic raster receipts, Windows/Android packaging, owner app. See the roadmap in the PRD.
+Back office reports and imports, integrated card terminal, super admin (businesses, subscriptions,
+support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing, Arabic raster receipts,
+Windows/Android packaging. See the roadmap in the PRD.

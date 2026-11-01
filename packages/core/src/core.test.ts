@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allocate,
+  DisplayRelay,
   checkPayments,
   formatMoney,
   formatReceiptNumber,
@@ -123,5 +124,20 @@ describe("receipt numbers", () => {
     expect(n).toBe("DXB1-R1-0005-0012");
     expect(parseReceiptNumber(n)).toEqual({ storeCode: "DXB1", registerCode: "R1", sessionSeq: 5, orderSeq: 12 });
     expect(parseReceiptNumber("bad")).toBeNull();
+  });
+});
+
+describe("display relay", () => {
+  const state = { kind: "cart" as const, storeName: "S", lines: [], subtotalNet: 0, taxTotal: 0, discountTotal: 0, total: 0 };
+
+  it("answers at once with a newer state and waits otherwise", async () => {
+    const relay = new DisplayRelay();
+    expect(await relay.get("r1", 0, 0)).toEqual({ version: 0, state: null });
+    const waiting = relay.get("r1", 0, 5_000);
+    relay.put("r1", state);
+    expect(await waiting).toEqual({ version: 1, state });
+    const t = Date.now();
+    expect((await relay.get("r1", 1, 50)).version).toBe(1);
+    expect(Date.now() - t).toBeGreaterThanOrEqual(45);
   });
 });

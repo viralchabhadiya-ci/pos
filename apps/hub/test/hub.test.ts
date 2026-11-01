@@ -299,3 +299,22 @@ async function waitFor(check: () => boolean, ms = 2_000) {
     await new Promise((r) => setTimeout(r, 20));
   }
 }
+
+describe("customer display", () => {
+  it("passes the cart from a till to its display inside the store, even offline", async () => {
+    const code = await createPairingCode(db, data.registerId, "display");
+    const claim = await hub.app.inject({ method: "POST", url: "/pairing/claim", payload: { code, deviceId: randomUUID(), deviceName: "Screen" } });
+    const display = { authorization: `Bearer ${claim.json().token}` };
+    await stopCloud();
+    try {
+      const state = { kind: "cart", storeName: "Demo", lines: [], subtotalNet: 0, taxTotal: 0, discountTotal: 0, total: 150 };
+      const waiting = hub.app.inject({ method: "GET", url: "/display/state?after=0&wait=5000", headers: display });
+      await new Promise((r) => setTimeout(r, 50));
+      expect((await hub.app.inject({ method: "PUT", url: "/display/state", headers: tillA, payload: { state } })).statusCode).toBe(200);
+      expect((await waiting).json()).toMatchObject({ version: 1, state: { total: 150 } });
+      expect((await hub.app.inject({ method: "PUT", url: "/display/state", headers: display, payload: { state } })).statusCode).toBe(403);
+    } finally {
+      await startCloud();
+    }
+  });
+});

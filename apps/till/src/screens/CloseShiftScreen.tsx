@@ -1,13 +1,28 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { Session, User } from "../lib/db.js";
+import type { DeviceSetup, Session, User } from "../lib/db.js";
 import { aed, tryParseMoney } from "../lib/format.js";
+import { printOnHub, shiftReportDoc } from "../lib/print.js";
 import { closeSession, shiftSummary, type ShiftSummary } from "../lib/till.js";
+import { useSyncStatus } from "../lib/useSync.js";
 
 /**
  * Blind close: the cashier counts first, then sees expected vs counted. Works offline
  * from local data; the server recalculates when the close syncs.
  */
-export function CloseShiftScreen({ session, user, onClosed, onCancel }: { session: Session; user: User; onClosed: () => void; onCancel: () => void }) {
+export function CloseShiftScreen({
+  setup,
+  session,
+  user,
+  onClosed,
+  onCancel,
+}: {
+  setup: DeviceSetup;
+  session: Session;
+  user: User;
+  onClosed: () => void;
+  onCancel: () => void;
+}) {
+  const hubPrinter = !!useSyncStatus().hub?.printer;
   const [summary, setSummary] = useState<ShiftSummary | null>(null);
   const [counted, setCounted] = useState("");
   const [submitted, setSubmitted] = useState<number | null>(null);
@@ -26,6 +41,11 @@ export function CloseShiftScreen({ session, user, onClosed, onCancel }: { sessio
   const confirm = async () => {
     if (submitted === null) return;
     await closeSession(session, user.id, submitted, note || undefined);
+    if (hubPrinter && summary) {
+      // The Z report goes in the cash bag; a printer problem must not undo the close.
+      const doc = shiftReportDoc(setup, session, summary, { kind: "Z", userName: user.name, counted: submitted, note: note || undefined });
+      await printOnHub(doc).catch(() => {});
+    }
     onClosed();
   };
 
