@@ -10,6 +10,15 @@ import { pairingRoutes } from "./routes/pairing.js";
 import { reportRoutes } from "./routes/reports.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { syncRoutes } from "./routes/sync.js";
+import { adminRoutes } from "./routes/admin/index.js";
+
+/** A signed-in back office user (owner or manager). */
+export interface AdminContext {
+  userId: string;
+  tenantId: string;
+  role: "owner" | "manager";
+  name: string;
+}
 
 export interface DeviceContext {
   deviceId: string;
@@ -23,6 +32,7 @@ declare module "fastify" {
   interface FastifyInstance {
     db: Db;
     authenticate: (req: FastifyRequest) => Promise<DeviceContext>;
+    authAdmin: (req: FastifyRequest) => Promise<AdminContext>;
   }
 }
 
@@ -46,6 +56,20 @@ export async function buildApp(db: Db, opts: { logger?: boolean } = {}): Promise
     return { deviceId: row.id, role: row.role, registerId: row.register_id, storeId: row.store_id, tenantId: row.tenant_id };
   });
 
+  app.decorate("authAdmin", async (req: FastifyRequest): Promise<AdminContext> => {
+    const header = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) throw new HttpError(401, "unauthorized", "Please sign in");
+    const { rows } = await db.query(
+      `SELECT u.id, u.tenant_id, u.role, u.name FROM admin_sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
+          AND u.active AND u.role IN ('owner', 'manager')`,
+      [hashToken(header.slice(7))],
+    );
+    const row = rows[0];
+    if (!row) throw new HttpError(401, "unauthorized", "Your session has ended. Please sign in again.");
+    return { userId: row.id, tenantId: row.tenant_id, role: row.role, name: row.name };
+  });
+
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) return reply.status(err.statusCode).send({ error: err.code, message: err.message });
     if (err instanceof ZodError) return reply.status(400).send({ error: "validation", issues: err.issues });
@@ -62,5 +86,6 @@ export async function buildApp(db: Db, opts: { logger?: boolean } = {}): Promise
   await app.register(orderRoutes);
   await app.register(customerRoutes);
   await app.register(reportRoutes);
+  await app.register(adminRoutes, { prefix: "/admin" });
   return app;
 }

@@ -31,3 +31,4 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm --filter @pos/till build
+      - run: pnpm --filter @pos/backoffice build

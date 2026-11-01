@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { withTx, type Db } from "./db.js";
-import { hashPin, newPairingCode } from "./security.js";
+import { hashPassword, hashPin, newPairingCode } from "./security.js";
 
 export interface SeedResult {
   tenantId: string;
@@ -8,6 +8,10 @@ export interface SeedResult {
   registerId: string;
   cashierId: string;
   managerId: string;
+  ownerId: string;
+  /** Back office sign-in for the owner. */
+  ownerEmail: string;
+  ownerPassword: string;
   vatId: string;
   cashMethodId: string;
   cardMethodId: string;
@@ -32,7 +36,10 @@ const PRODUCTS: [category: string, name: string, nameAr: string, price: number, 
 ];
 
 /** Demo data for a Dubai minimart: one store, one register, VAT 5% included in prices. */
-export async function seed(db: Db, opts: { cashierPin?: string; managerPin?: string } = {}): Promise<SeedResult> {
+export async function seed(
+  db: Db,
+  opts: { cashierPin?: string; managerPin?: string; ownerPin?: string; ownerEmail?: string; ownerPassword?: string } = {},
+): Promise<SeedResult> {
   return withTx(db, async (tx) => {
     const tenantId = randomUUID();
     const storeId = randomUUID();
@@ -40,6 +47,7 @@ export async function seed(db: Db, opts: { cashierPin?: string; managerPin?: str
     const vatId = randomUUID();
     const cashierId = randomUUID();
     const managerId = randomUUID();
+    const ownerId = randomUUID();
     const cashMethodId = randomUUID();
     const cardMethodId = randomUUID();
     const manualCardId = randomUUID();
@@ -66,6 +74,17 @@ export async function seed(db: Db, opts: { cashierPin?: string; managerPin?: str
       `INSERT INTO users (id, tenant_id, name, role, pin_salt, pin_hash) VALUES
          ($1, $3, 'Aisha (Cashier)', 'cashier', $4, $5), ($2, $3, 'Rahul (Manager)', 'manager', $6, $7)`,
       [cashierId, managerId, tenantId, cashier.salt, cashier.hash, manager.salt, manager.hash],
+    );
+    // Emails are unique across businesses, so a second demo seed gets its own address.
+    let ownerEmail = opts.ownerEmail ?? "owner@demo.ae";
+    const taken = await tx.query("SELECT 1 FROM users WHERE lower(email) = lower($1)", [ownerEmail]);
+    if (taken.rowCount) ownerEmail = ownerEmail.replace("@", `+${tenantId.slice(0, 8)}@`);
+    const ownerPassword = opts.ownerPassword ?? "demo1234";
+    const owner = hashPin(opts.ownerPin ?? "7777");
+    await tx.query(
+      `INSERT INTO users (id, tenant_id, name, email, role, pin_salt, pin_hash, password_hash)
+       VALUES ($1, $2, 'Omar (Owner)', $3, 'owner', $4, $5, $6)`,
+      [ownerId, tenantId, ownerEmail, owner.salt, owner.hash, hashPassword(ownerPassword)],
     );
     await tx.query(
       `INSERT INTO payment_methods (id, tenant_id, name, kind) VALUES
@@ -103,7 +122,20 @@ export async function seed(db: Db, opts: { cashierPin?: string; managerPin?: str
       variants.push({ id: variantId, name, price, barcode });
     }
 
-    return { tenantId, storeId, registerId, cashierId, managerId, vatId, cashMethodId, cardMethodId, variants };
+    return {
+      tenantId,
+      storeId,
+      registerId,
+      cashierId,
+      managerId,
+      ownerId,
+      ownerEmail,
+      ownerPassword,
+      vatId,
+      cashMethodId,
+      cardMethodId,
+      variants,
+    };
   });
 }
 
