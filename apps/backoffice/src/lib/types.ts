@@ -4,7 +4,8 @@ export interface Me {
   stores: { id: string; name: string; code: string; timezone: string }[];
 }
 
-export interface Tax { id: string; name: string; rateBp: number; priceIncluded: boolean; active: boolean }
+export type TaxKind = "standard" | "zero" | "exempt";
+export interface Tax { id: string; name: string; rateBp: number; priceIncluded: boolean; kind: TaxKind; active: boolean; productCount: number }
 export interface Category { id: string; name: string; nameAr: string | null; sort: number; active: boolean; productCount: number }
 export interface Product {
   id: string;
@@ -17,9 +18,11 @@ export interface Product {
   price: number;
   cost: number | null;
   barcode: string | null;
+  extraBarcodes: string[];
   sku: string | null;
+  reorderLevel: number | null;
   active: boolean;
-  onHand: string;
+  onHand: number;
 }
 export interface Staff {
   id: string;
@@ -68,4 +71,37 @@ export interface Dashboard {
   topProducts: { variantId: string; name: string; qty: number; total: number }[];
   trend: { date: string; total: number; orders: number }[];
   recentOrders: { id: string; number: string; createdAt: string; total: number; isRefund: boolean }[];
+  lowStock: { count: number; items: { id: string; name: string; reorderLevel: number; onHand: number }[] };
+}
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  trn: string | null;
+  orders?: number;
+  spent?: number;
+  lastVisit?: string | null;
+}
+export interface AuditEntry {
+  id: number;
+  at: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  data: Record<string, unknown>;
+  userName: string | null;
+  deviceName: string | null;
+}
+export interface Store {
+  id: string;
+  code: string;
+  name: string;
+  nameAr: string | null;
+  address: string | null;
+  phone: string | null;
+  trn: string | null;
+  timezone: string;
+  cashRoundingStep: number;
+  receiptFooter: string | null;
 }

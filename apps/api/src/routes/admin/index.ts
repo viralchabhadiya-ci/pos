@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { authRoutes } from "./auth.js";
+import { businessRoutes } from "./business.js";
 import { catalogRoutes } from "./catalog.js";
 import { deviceRoutes } from "./devices.js";
+import { productCsvRoutes } from "./products-csv.js";
+import { adminReportRoutes } from "./reports.js";
 import { salesRoutes } from "./sales.js";
 import { staffRoutes } from "./staff.js";
 
@@ -9,7 +12,10 @@ import { staffRoutes } from "./staff.js";
 export async function adminRoutes(app: FastifyInstance) {
   await app.register(authRoutes);
   await app.register(catalogRoutes);
+  await app.register(productCsvRoutes);
   await app.register(staffRoutes);
   await app.register(deviceRoutes);
   await app.register(salesRoutes);
+  await app.register(adminReportRoutes);
+  await app.register(businessRoutes);
 }

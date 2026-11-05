@@ -117,6 +117,28 @@ export function Dashboard({ me }: { me: Me }) {
             </ol>
           </section>
 
+          {data && data.lowStock.count > 0 && (
+            <section className="panel span-3 low-stock" aria-labelledby="h-low">
+              <div className="panel-head">
+                <h2 id="h-low">
+                  <Icon name="alert" /> {data.lowStock.count} product{data.lowStock.count === 1 ? " is" : "s are"} low on stock
+                </h2>
+                <a href="#/products/low" className="link">
+                  See all
+                </a>
+              </div>
+              <ul className="low-list">
+                {data.lowStock.items.map((p) => (
+                  <li key={p.id}>
+                    <span className="rank-name">{p.name}</span>
+                    <span className={p.onHand <= 0 ? "num strong bad" : "num strong"}>{qty(p.onHand)} left</span>
+                    <span className="muted small num">alert at {qty(p.reorderLevel)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="panel span-3" aria-labelledby="h-recent">
             <div className="panel-head">
               <h2 id="h-recent">Latest bills</h2>

@@ -58,6 +58,7 @@ export function SellScreen({ setup, user }: Props) {
           taxId: p.taxId,
           uom: p.uom,
           barcode: v.barcode,
+          extraBarcodes: v.extraBarcodes ?? [],
           sku: v.sku,
           categoryId: p.categoryId,
         };
@@ -70,7 +71,7 @@ export function SellScreen({ setup, user }: Props) {
     return (items ?? []).filter(
       (i) =>
         (!categoryId || i.categoryId === categoryId) &&
-        (!q || i.name.toLowerCase().includes(q) || i.barcode === q || i.sku?.toLowerCase() === q || i.nameAr?.includes(q)),
+        (!q || i.name.toLowerCase().includes(q) || (i.barcode === q || i.extraBarcodes.includes(q)) || i.sku?.toLowerCase() === q || i.nameAr?.includes(q)),
     );
   }, [items, search, categoryId]);
 
@@ -138,7 +139,7 @@ export function SellScreen({ setup, user }: Props) {
   };
 
   const scan = (code: string) => {
-    const hit = items?.find((i) => i.barcode === code || i.sku === code);
+    const hit = items?.find((i) => i.barcode === code || i.extraBarcodes.includes(code) || i.sku === code);
     if (hit) add(hit);
     else setNotice(`No product with barcode ${code}`);
   };
@@ -221,7 +222,7 @@ export function SellScreen({ setup, user }: Props) {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
-              const exact = items?.find((i) => i.barcode === search.trim() || i.sku === search.trim());
+              const exact = items?.find((i) => i.barcode === search.trim() || i.extraBarcodes.includes(search.trim()) || i.sku === search.trim());
               const only = visible.length === 1 ? visible[0] : undefined;
               const hit = exact ?? only;
               if (hit) {

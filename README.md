@@ -69,6 +69,21 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 - **Tills & devices:** add registers, get a 6-digit pairing code (15 minutes, works once), remove a lost
   device so its token stops working.
 - **Sales:** search bills by number and date, open a bill to see items, VAT, payments and linked refunds.
+- **Reports:** sales by product, category, cashier, payment method or day for any date range, and a
+  VAT return view split like the FTA VAT 201 form (standard rated, zero rated, exempt), net of credit
+  notes. Every report downloads as CSV.
+- **Products import and export:** a CSV with `name` and `price` plus optional `name_ar`, `category`,
+  `barcode`, `extra_barcodes` (separated by `|`), `sku`, `cost`, `vat`, `unit`, `reorder_level`,
+  `active`. The file is checked first; nothing is saved if any row has a problem. Rows match existing
+  products by barcode, then SKU.
+- **More barcodes per product** (old and new packs) and a **low stock alert level**; low items show
+  on the dashboard and under Products → Low stock.
+- **VAT rates:** standard, zero rated and exempt. Zero rated and exempt both charge 0% but are
+  reported separately.
+- **Customers:** search, add, edit, TRN for business customers, and their bills.
+- **Audit log:** who changed what, from the back office and the tills.
+- **Settings (owner):** store name, Arabic name, address, phone, TRN, cash rounding and receipt
+  footer (`|` starts a new line). Tills pick the changes up with their next catalog sync.
 
 Every change is written to the audit log with who made it.
 
@@ -124,6 +139,6 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Back office reports and imports, integrated card terminal, super admin (businesses, subscriptions,
+Integrated card terminal, super admin (businesses, subscriptions,
 support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing, Arabic raster receipts,
 Windows/Android packaging. See the roadmap in the PRD.
