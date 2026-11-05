@@ -18,6 +18,8 @@ export interface Variant {
   productId: string;
   sku: string | null;
   barcode: string | null;
+  /** More barcodes for the same item (older packs and so on). */
+  extraBarcodes?: string[];
   attributes: Record<string, string>;
   price: number;
   active: boolean;
@@ -33,6 +35,7 @@ export interface DeviceSetup {
     name: string;
     nameAr: string | null;
     address: string | null;
+    phone?: string | null;
     trn: string | null;
     timezone: string;
     cashRoundingStep: number;

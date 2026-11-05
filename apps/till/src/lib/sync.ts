@@ -1,6 +1,6 @@
 import { liveQuery } from "dexie";
 import { request, ApiError, OfflineError } from "./api.js";
-import { db, type OutboxItem } from "./db.js";
+import { db, type DeviceSetup, type OutboxItem } from "./db.js";
 
 /** What the store hub reports when the till is connected through one. */
 export interface HubInfo {
@@ -50,6 +50,7 @@ export async function pullCatalog() {
     variants: never[];
     paymentMethods: never[];
     users: never[];
+    store?: DeviceSetup["store"] | null;
   }>(`/sync/catalog${query}`);
   await db.transaction("rw", [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.meta], async () => {
     await db.taxes.bulkPut(data.taxes);
@@ -59,8 +60,17 @@ export async function pullCatalog() {
     await db.paymentMethods.bulkPut(data.paymentMethods);
     await db.users.bulkPut(data.users);
     await db.setMeta("catalogSince", data.serverTime);
+    if (data.store) {
+      // Receipt details edited in the back office (name, TRN, footer, rounding).
+      const setup = await db.getMeta<DeviceSetup>("setup");
+      if (setup && setup.store.id === data.store.id) await db.setMeta("setup", { ...setup, store: { ...setup.store, ...data.store } });
+    }
   });
+  if (data.store) window.dispatchEvent(new Event(SETUP_CHANGED));
 }
+
+/** Fired when the stored device setup changes, so screens pick up new store details. */
+export const SETUP_CHANGED = "pos-setup-changed";
 
 async function markOrder(id: string, syncStatus: "synced" | "rejected", syncError?: string) {
   await db.orders.update(id, { syncStatus, syncError });

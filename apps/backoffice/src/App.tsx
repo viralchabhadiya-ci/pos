@@ -3,22 +3,30 @@ import { Icon, type IconName } from "./components/Icon.js";
 import { api, getToken, setToken, whenSignedOut } from "./lib/api.js";
 import { useRoute } from "./lib/router.js";
 import type { Me } from "./lib/types.js";
+import { Audit } from "./pages/Audit.js";
 import { Categories } from "./pages/Categories.js";
+import { Customers } from "./pages/Customers.js";
 import { Dashboard } from "./pages/Dashboard.js";
 import { Devices } from "./pages/Devices.js";
 import { Login } from "./pages/Login.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
 import { Products } from "./pages/Products.js";
+import { Reports } from "./pages/Reports.js";
 import { Sales } from "./pages/Sales.js";
+import { Settings } from "./pages/Settings.js";
 import { Staff } from "./pages/Staff.js";
 
 const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
   { path: "sales", label: "Sales", icon: "receipt" },
+  { path: "reports", label: "Reports", icon: "chart" },
   { path: "products", label: "Products", icon: "box" },
   { path: "categories", label: "Categories", icon: "tag" },
+  { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
+  { path: "audit", label: "Audit log", icon: "history" },
+  { path: "settings", label: "Settings", icon: "settings" },
 ];
 
 export function App() {
@@ -81,8 +89,17 @@ export function App() {
     switch (page) {
       case "sales":
         return route[1] ? <OrderDetail id={route[1]} /> : <Sales />;
+      case "reports":
+        return <Reports />;
       case "products":
-        return <Products me={me} />;
+        // Keyed so the dashboard's "low stock" link resets the filter.
+        return <Products key={route[1] ?? ""} me={me} initialStatus={route[1]} />;
+      case "customers":
+        return <Customers />;
+      case "audit":
+        return <Audit />;
+      case "settings":
+        return <Settings me={me} />;
       case "categories":
         return <Categories />;
       case "staff":

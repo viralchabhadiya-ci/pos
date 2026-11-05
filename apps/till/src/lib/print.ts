@@ -25,6 +25,7 @@ export function receiptDoc(
     { type: "text", text: setup.store.name, align: "center", bold: true, double: true },
   ];
   if (setup.store.address) blocks.push({ type: "text", text: setup.store.address, align: "center" });
+  if (setup.store.phone) blocks.push({ type: "text", text: `Tel ${setup.store.phone}`, align: "center" });
   if (setup.store.trn) blocks.push({ type: "text", text: `TRN ${setup.store.trn}`, align: "center" });
   blocks.push(
     { type: "text", text: refund ? "TAX CREDIT NOTE" : "TAX INVOICE", align: "center", bold: true },
@@ -58,7 +59,13 @@ export function receiptDoc(
     blocks.push({ type: "row", left: name, right: money(p.tendered ?? p.amount) });
   }
   if (order.payment.change > 0) blocks.push({ type: "row", left: "Change", right: money(order.payment.change) });
-  if (setup.store.receiptFooter) blocks.push({ type: "feed" }, { type: "text", text: setup.store.receiptFooter, align: "center" });
+  if (setup.store.receiptFooter) {
+    blocks.push({ type: "feed" });
+    // "|" in the footer starts a new line (e.g. English | Arabic).
+    for (const line of setup.store.receiptFooter.split("|").map((l) => l.trim()).filter(Boolean)) {
+      blocks.push({ type: "text", text: line, align: "center" });
+    }
+  }
   blocks.push({ type: "feed" }, { type: "barcode", data: order.number });
   if (setup.publicUrl) {
     blocks.push(

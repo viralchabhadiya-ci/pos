@@ -63,3 +63,29 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
 }
 
 export const errorText = (err: unknown) => (err instanceof Error ? err.message : "Something went wrong");
+
+/** Downloads a file (CSV) from the API with the session token and saves it in the browser. */
+export async function download(path: string, filename: string) {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/admin${path}`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw new ApiError(0, "offline", "Cannot reach the server. Check the internet connection and try again.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? "error", data.message ?? "The download failed");
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

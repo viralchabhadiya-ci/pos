@@ -111,7 +111,7 @@ export async function salesRoutes(app: FastifyInstance) {
     const day = `${scope} AND ${local}::date = $3::date`;
     const base = "FROM orders o JOIN stores s ON s.id = o.store_id";
 
-    const [totals, hourly, payments, top, trend, recent] = await Promise.all([
+    const [totals, hourly, payments, top, trend, recent, lowStock] = await Promise.all([
       app.db.query(
         `SELECT COUNT(*) FILTER (WHERE o.refund_of_order_id IS NULL)::int AS "orderCount",
                 COUNT(*) FILTER (WHERE o.refund_of_order_id IS NOT NULL)::int AS "refundCount",
@@ -155,6 +155,16 @@ export async function salesRoutes(app: FastifyInstance) {
            ${base} WHERE ${day} ORDER BY o.created_at DESC LIMIT 8`,
         params,
       ),
+      // Products at or below their reorder level, lowest first.
+      app.db.query(
+        `SELECT p.id, p.name, v.reorder_level AS "reorderLevel", oh.qty AS "onHand", COUNT(*) OVER ()::int AS total
+           FROM products p JOIN variants v ON v.product_id = p.id
+           JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m
+                          WHERE m.variant_id = v.id AND ($2::uuid IS NULL OR m.store_id = $2)) oh ON true
+          WHERE p.tenant_id = $1 AND p.active AND v.reorder_level IS NOT NULL AND oh.qty <= v.reorder_level
+          ORDER BY oh.qty - v.reorder_level, p.name LIMIT 5`,
+        [ctx.tenantId, q.storeId ?? null],
+      ),
     ]);
     const t = totals.rows[0];
     return {
@@ -166,6 +176,7 @@ export async function salesRoutes(app: FastifyInstance) {
       topProducts: top.rows,
       trend: trend.rows,
       recentOrders: recent.rows,
+      lowStock: { count: lowStock.rows[0]?.total ?? 0, items: lowStock.rows.map(({ total: _, ...r }) => r) },
     };
   });
 }

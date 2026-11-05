@@ -41,7 +41,8 @@ describe("catalog sync", () => {
     const body = full.json();
     expect(body.full).toBe(true);
     expect(body.variants).toHaveLength(ctx.data.variants.length);
-    expect(body.taxes[0]).toMatchObject({ rateBp: 500, priceIncluded: true });
+    expect(body.taxes.find((t: { kind: string }) => t.kind === "standard")).toMatchObject({ rateBp: 500, priceIncluded: true });
+    expect(body.store).toMatchObject({ code: "DXB1", trn: "100000000000003" });
     expect(body.users[0]).toHaveProperty("pinHash");
 
     await ctx.db.query("UPDATE variants SET price = 175, updated_at = now() WHERE id = $1", [ctx.data.variants[1]!.id]);

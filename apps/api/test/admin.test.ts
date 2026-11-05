@@ -196,7 +196,8 @@ describe("sales and dashboard", () => {
     const refunds = (await api("GET", "/orders?type=refunds")).json();
     expect(refunds.count).toBe(1);
     const number = all.orders[2].number as string;
-    expect((await api("GET", `/orders?q=${number.slice(-4)}`)).json().orders[0].number).toBe(number);
+    // The last 9 characters (shift and bill number) are unique within one register.
+    expect((await api("GET", `/orders?q=${number.slice(-9)}`)).json().orders.map((o: { number: string }) => o.number)).toEqual([number]);
   });
 
   it("shows a bill with lines, payments and its refunds", async () => {
@@ -234,5 +235,103 @@ describe("tenant isolation", () => {
     expect((await api("POST", `/registers/${ctx.data.registerId}/pairing-code`, {}, them)).statusCode).toBe(404);
     const products = (await api("GET", "/products", undefined, them)).json().products;
     expect(products.some((p: { name: string }) => p.name === "Rani Float Mango")).toBe(false);
+  });
+});
+
+describe("barcodes, VAT kinds and CSV", () => {
+  it("rings up extra barcodes and refuses one already in use", async () => {
+    const res = await api("POST", "/products", { name: "Pepsi 330ml", price: 250, barcode: "6290000000011", extraBarcodes: ["6290000000012"] });
+    expect(res.statusCode).toBe(200);
+    expect((await api("GET", "/products?q=6290000000012")).json().products[0].name).toBe("Pepsi 330ml");
+    const clash = await api("POST", "/products", { name: "Clash", price: 100, extraBarcodes: ["6290000000011"] });
+    expect(clash.statusCode).toBe(409);
+    const sync = await ctx.app.inject({ method: "GET", url: "/sync/catalog", headers: ctx.auth });
+    expect(JSON.stringify(sync.json().variants)).toContain("6290000000012");
+  });
+
+  it("has standard, zero-rated and exempt VAT", async () => {
+    const kinds = (await api("GET", "/taxes")).json().taxes.map((t: { kind: string }) => t.kind).sort();
+    expect(kinds).toEqual(["exempt", "standard", "zero"]);
+    expect((await api("POST", "/taxes", { name: "Bad", rateBp: 500, kind: "zero" })).statusCode).toBe(400);
+  });
+
+  it("checks a CSV first, then imports it all or nothing", async () => {
+    const bad = "name,price,vat\nGood,1.00,Exempt\nBroken,abc,\n";
+    const check = (await api("POST", "/products/import", { csv: bad, dryRun: false })).json();
+    expect(check.saved).toBe(false);
+    expect(check.errors).toEqual([expect.objectContaining({ row: 3 })]);
+    expect((await api("GET", "/products?q=Good")).json().products).toHaveLength(0);
+
+    const csv = "name,category,barcode,price,vat\nDates 500g,Dry Food,6290000000099,12.50,Zero-rated 0%\nPepsi 330ml,,6290000000011,2.75,\n";
+    const dry = (await api("POST", "/products/import", { csv })).json();
+    expect(dry).toMatchObject({ create: 1, update: 1, newCategories: ["Dry Food"], saved: false });
+    const done = (await api("POST", "/products/import", { csv, dryRun: false })).json();
+    expect(done.saved).toBe(true);
+    expect((await api("GET", "/products?q=6290000000011")).json().products[0].price).toBe(275);
+    const exported = await api("GET", "/products/export.csv");
+    expect(exported.headers["content-type"]).toContain("text/csv");
+    expect(exported.body).toContain("Dates 500g,,Dry Food,6290000000099");
+  });
+});
+
+describe("reports, customers, audit and settings", () => {
+  it("groups sales by product, cashier, payment and day, and exports CSV", async () => {
+    const today = (await api("GET", "/dashboard")).json().date;
+    const q = `from=${today}&to=${today}`;
+    const byProduct = (await api("GET", `/reports/sales?${q}&groupBy=product`)).json();
+    expect(byProduct.rows[0]).toMatchObject({ name: "Coca-Cola 330ml" });
+    const byCashier = (await api("GET", `/reports/sales?${q}&groupBy=cashier`)).json().rows;
+    expect(byCashier).toEqual([expect.objectContaining({ name: "Aisha (Cashier)", orders: 2, refunds: 1, total: 1800 })]);
+    const byPayment = (await api("GET", `/reports/sales?${q}&groupBy=payment`)).json().rows;
+    expect(byPayment.reduce((n: number, r: { total: number }) => n + r.total, 0)).toBe(1800);
+    const byDay = (await api("GET", `/reports/sales?${q}&groupBy=day`)).json().rows;
+    expect(byDay).toEqual([expect.objectContaining({ name: today, total: 1800 })]);
+    const csv = await api("GET", `/reports/sales?${q}&groupBy=category&format=csv`);
+    expect(csv.headers["content-disposition"]).toContain("sales-by-category");
+    expect(csv.body.split("\r\n")[0]).toContain("Category,Qty sold");
+    expect((await api("GET", `/reports/sales?from=${today}&to=2020-01-01`)).statusCode).toBe(400);
+  });
+
+  it("splits VAT into the return's boxes, net of credit notes", async () => {
+    const today = (await api("GET", "/dashboard")).json().date;
+    const vat = (await api("GET", `/reports/vat?from=${today}&to=${today}`)).json();
+    const d = (await api("GET", "/dashboard")).json();
+    expect(vat.boxes.standardRated).toEqual({ amount: d.net, vat: d.tax });
+    expect(vat.rows[0]).toMatchObject({ kind: "standard", rateBp: 500 });
+    expect(vat.rows[0].refundNet).toBeGreaterThan(0);
+  });
+
+  it("adds customers, refuses a duplicate phone and shows their bills", async () => {
+    const res = await api("POST", "/customers", { name: "Mariam", phone: "0501234567", trn: "100200300400500" });
+    expect(res.statusCode).toBe(200);
+    expect((await api("POST", "/customers", { name: "Copy", phone: "0501234567" })).statusCode).toBe(409);
+    expect((await api("POST", "/customers", { name: "Bad TRN", trn: "123" })).statusCode).toBe(400);
+    const found = (await api("GET", "/customers?q=4567")).json();
+    expect(found.customers[0]).toMatchObject({ name: "Mariam", orders: 0, spent: 0 });
+    expect((await api("GET", `/customers/${res.json().id}`)).json().orders).toEqual([]);
+  });
+
+  it("lists the audit log with who did what", async () => {
+    const log = (await api("GET", "/audit?entity=customer")).json();
+    expect(log.entries[0]).toMatchObject({ action: "customer.create", userName: "Omar (Owner)" });
+    expect((await api("GET", "/audit?q=priceTo")).json().count).toBeGreaterThan(0);
+  });
+
+  it("lets the owner edit receipt details that reach the till", async () => {
+    const store = (await api("GET", "/stores")).json().stores[0];
+    const since = (await ctx.app.inject({ method: "GET", url: "/sync/catalog", headers: ctx.auth })).json().serverTime;
+    const res = await api("PUT", `/stores/${store.id}`, { ...store, phone: "04 123 4567", receiptFooter: "See you soon" });
+    expect(res.statusCode).toBe(200);
+    expect((await api("PUT", `/stores/${store.id}`, { ...store, timezone: "Mars/Base" })).statusCode).toBe(400);
+    const delta = await ctx.app.inject({ method: "GET", url: `/sync/catalog?since=${encodeURIComponent(since)}`, headers: ctx.auth });
+    expect(delta.json().store).toMatchObject({ phone: "04 123 4567", receiptFooter: "See you soon" });
+  });
+
+  it("flags products at or below their reorder level", async () => {
+    const p = (await api("GET", "/products?q=Croissant")).json().products[0];
+    await api("PUT", `/products/${p.id}`, { ...p, reorderLevel: 5 });
+    const d = (await api("GET", "/dashboard")).json();
+    expect(d.lowStock.items).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Croissant", reorderLevel: 5 })]));
+    expect((await api("GET", "/products?status=low")).json().products.map((x: { name: string }) => x.name)).toContain("Croissant");
   });
 });

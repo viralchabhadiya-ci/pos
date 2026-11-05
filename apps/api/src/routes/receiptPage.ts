@@ -17,7 +17,7 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     const id = Id.safeParse(req.params.id);
     const { rows } = id.success
       ? await app.db.query(
-          `SELECT o.*, s.name AS store_name, s.name_ar AS store_name_ar, s.address, s.trn, s.timezone, s.receipt_footer,
+          `SELECT o.*, s.name AS store_name, s.name_ar AS store_name_ar, s.address, s.phone, s.trn, s.timezone, s.receipt_footer,
                   u.name AS cashier_name, ro.number AS original_number, c.name AS customer_name, c.trn AS customer_trn
              FROM orders o JOIN stores s ON s.id = o.store_id JOIN users u ON u.id = o.cashier_id
              LEFT JOIN orders ro ON ro.id = o.refund_of_order_id LEFT JOIN customers c ON c.id = o.customer_id
@@ -53,6 +53,7 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     <h1>${esc(o.store_name)}</h1>
     ${o.store_name_ar ? `<p class="ar" dir="rtl" lang="ar">${esc(o.store_name_ar)}</p>` : ""}
     ${o.address ? `<p class="muted">${esc(o.address)}</p>` : ""}
+    ${o.phone ? `<p class="muted">Tel ${esc(o.phone)}</p>` : ""}
     ${o.trn ? `<p class="muted">TRN ${esc(o.trn)}</p>` : ""}
     <p class="doc">${refund ? "Tax Credit Note · إشعار دائن ضريبي" : "Tax Invoice · فاتورة ضريبية"}</p>
   </header>
@@ -83,7 +84,7 @@ export async function receiptPageRoutes(app: FastifyInstance) {
   <dl class="pays">${pays.rows
     .map((p) => `<dt>${esc(p.name)}</dt><dd>${m(p.tendered ?? p.amount)}${p.change ? ` · change ${m(p.change)}` : ""}</dd>`)
     .join("")}</dl>
-  ${o.receipt_footer ? `<p class="foot">${esc(o.receipt_footer)}</p>` : ""}
+  ${o.receipt_footer ? `<p class="foot">${String(o.receipt_footer).split("|").map((l: string) => esc(l.trim())).filter(Boolean).join("<br>")}</p>` : ""}
 </main>`;
     return page(`${refund ? "Credit note" : "Receipt"} ${o.number}`, body);
   });
