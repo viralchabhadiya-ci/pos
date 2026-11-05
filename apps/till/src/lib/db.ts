@@ -39,6 +39,10 @@ export interface DeviceSetup {
     receiptFooter: string | null;
   };
   register: { id: string; code: string; name: string };
+  /** A device paired as a customer display shows the cart instead of selling. */
+  device?: { role: "till" | "display" };
+  /** Base for digital receipt links (the QR on the receipt); null when not set up. */
+  publicUrl?: string | null;
   lastSessionSeq: number;
   openSession: { id: string; seq: number; openedBy: string; openedAt: string; openingCash: number } | null;
 }
@@ -87,6 +91,15 @@ export interface OutboxItem {
 
 export interface Meta { key: string; value: unknown }
 
+/** A sale put aside (customer went to fetch something) to serve the next one. Local to this till. */
+export interface ParkedSale {
+  id: string;
+  createdAt: string;
+  cashierName: string;
+  cart: import("./cart.js").Cart;
+  total: number;
+}
+
 export class TillDb extends Dexie {
   meta!: Table<Meta, string>;
   taxes!: Table<Tax, string>;
@@ -99,6 +112,7 @@ export class TillDb extends Dexie {
   cashMoves!: Table<CashMoveRecord, string>;
   orders!: Table<LocalOrder, string>;
   outbox!: Table<OutboxItem, number>;
+  parked!: Table<ParkedSale, string>;
 
   constructor(name = "pos-till") {
     super(name);
@@ -115,6 +129,7 @@ export class TillDb extends Dexie {
       orders: "id, sessionId, number, createdAt, syncStatus",
       outbox: "++seq, kind, refId",
     });
+    this.version(2).stores({ parked: "id, createdAt" });
   }
 
   async getMeta<T>(key: string): Promise<T | undefined> {

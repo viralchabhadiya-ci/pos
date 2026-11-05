@@ -16,7 +16,7 @@ export async function pairingRoutes(app: FastifyInstance) {
   app.post("/pairing/claim", async (req) => {
     const body = ClaimSchema.parse(req.body);
     const { token, hash } = newDeviceToken();
-    const registerId = await withTx(app.db, async (tx) => {
+    const paired = await withTx(app.db, async (tx) => {
       const { rows } = await tx.query(
         `SELECT register_id, role FROM pairing_codes
           WHERE code = $1 AND used_at IS NULL AND expires_at > now() FOR UPDATE`,
@@ -29,14 +29,14 @@ export async function pairingRoutes(app: FastifyInstance) {
         "INSERT INTO devices (id, register_id, name, role, token_hash) VALUES ($1, $2, $3, $4, $5)",
         [body.deviceId, pairing.register_id, body.deviceName, pairing.role, hash],
       );
-      return pairing.register_id as string;
+      return { registerId: pairing.register_id as string, role: pairing.role as "till" | "display" };
     });
-    return { token, ...(await loadDeviceSetup(app.db, registerId)) };
+    return { token, ...(await loadDeviceSetup(app.db, paired.registerId, paired.role)) };
   });
 
   /** Lets a paired device refresh its store, register and open-session details. */
   app.get("/device/setup", async (req) => {
     const device = await app.authenticate(req);
-    return loadDeviceSetup(app.db, device.registerId);
+    return loadDeviceSetup(app.db, device.registerId, device.role);
   });
 }

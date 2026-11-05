@@ -2,7 +2,7 @@ import { checkPayments, priceOrder } from "@pos/core";
 import { encodeReceipt } from "@pos/escpos";
 import { describe, expect, it } from "vitest";
 import type { DeviceSetup, LocalOrder } from "./db.js";
-import { needsDrawer, receiptDoc } from "./print.js";
+import { needsDrawer, receiptDoc, shiftReportDoc } from "./print.js";
 
 const setup = {
   store: { name: "Demo Minimart", address: "Al Karama, Dubai", trn: "100000000000003", timezone: "Asia/Dubai", receiptFooter: "Thank you" },
@@ -43,5 +43,30 @@ describe("printed receipt", () => {
     expect(text).toContain("TAX CREDIT NOTE");
     expect(text).toContain("Ref. invoice: DXB1-R1-0001-0003");
     expect(needsDrawer(refund)).toBe(false);
+  });
+});
+
+describe("notes, receipt QR and shift reports", () => {
+  it("prints line notes and a QR to the digital receipt", () => {
+    const withNote = { ...order, lines: [{ ...lines[0]!, note: "Gift wrap" }, lines[1]!] } as LocalOrder;
+    const doc = receiptDoc({ ...setup, publicUrl: "https://pos.example" }, withNote, { cashierName: "Aisha", methods: [] });
+    expect(doc.blocks).toContainEqual({ type: "text", text: "  Note: Gift wrap" });
+    expect(doc.blocks).toContainEqual({ type: "qr", data: "https://pos.example/r/o1" });
+    expect(receiptDoc(setup, order, { cashierName: "A", methods: [] }).blocks.some((b) => b.type === "qr")).toBe(false);
+  });
+
+  it("prints the Z report with expected, counted and the difference", () => {
+    const summary = { openingCash: 50_000, cashSales: 1_100, cashIn: 0, cashOut: 2_000, expectedCash: 49_100, orderCount: 3, total: 4_000, taxTotal: 190, byKind: { cash: 1_100, card: 2_900 } };
+    const doc = shiftReportDoc({ ...setup, register: { id: "r", code: "R1", name: "Counter 1" } } as DeviceSetup, { seq: 4, openedAt: "2026-10-22T04:00:00Z" }, summary, {
+      kind: "Z",
+      userName: "Rahul",
+      counted: 49_000,
+      note: "Short change",
+      at: new Date("2026-10-22T16:00:00Z"),
+    });
+    const text = Buffer.from(encodeReceipt(doc, { width: 48 })).toString("latin1");
+    for (const want of ["Z REPORT", "Counter 1", "shift 4", "Bills", "Card", "Expected cash", "491.00", "Counted", "490.00", "Difference", "-1.00", "Reason: Short change"]) {
+      expect(text).toContain(want);
+    }
   });
 });

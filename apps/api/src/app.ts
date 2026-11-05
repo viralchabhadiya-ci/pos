@@ -11,6 +11,8 @@ import { reportRoutes } from "./routes/reports.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { syncRoutes } from "./routes/sync.js";
 import { adminRoutes } from "./routes/admin/index.js";
+import { displayRoutes } from "./routes/display.js";
+import { receiptPageRoutes } from "./routes/receiptPage.js";
 
 /** A signed-in back office user (owner or manager). */
 export interface AdminContext {
@@ -86,6 +88,8 @@ export async function buildApp(db: Db, opts: { logger?: boolean } = {}): Promise
   await app.register(orderRoutes);
   await app.register(customerRoutes);
   await app.register(reportRoutes);
+  await app.register(displayRoutes);
+  await app.register(receiptPageRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   return app;
 }

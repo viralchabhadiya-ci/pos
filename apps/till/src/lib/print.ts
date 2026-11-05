@@ -1,6 +1,7 @@
 import type { Block, ReceiptDoc } from "@pos/escpos";
 import { request } from "./api.js";
-import type { DeviceSetup, LocalOrder, PaymentMethod } from "./db.js";
+import type { DeviceSetup, LocalOrder, PaymentMethod, Session } from "./db.js";
+import type { ShiftSummary } from "./till.js";
 import { money, qtyText } from "./format.js";
 
 /**
@@ -13,6 +14,7 @@ export function receiptDoc(
   order: LocalOrder,
   opts: { cashierName: string; methods: Pick<PaymentMethod, "id" | "name">[]; originalNumber?: string; openDrawer?: boolean },
 ): ReceiptDoc {
+  const notes = new Map(order.lines.map((l) => [l.id, l.note]));
   const refund = order.refundOfOrderId !== null;
   const date = new Intl.DateTimeFormat("en-GB", {
     dateStyle: "short",
@@ -38,6 +40,8 @@ export function receiptDoc(
       { type: "text", text: l.name },
       { type: "row", left: `  ${qtyText(Math.abs(l.qty), uom)} x ${money(l.unitPrice)}${discount}`, right: money(l.gross) },
     );
+    const note = notes.get(l.id);
+    if (note) blocks.push({ type: "text", text: `  Note: ${note}` });
   }
   blocks.push({ type: "rule" }, { type: "row", left: "Total excl. VAT", right: money(order.totals.subtotalNet) });
   for (const t of order.totals.taxes) blocks.push({ type: "row", left: `VAT ${t.rateBp / 100}%`, right: money(t.tax) });
@@ -56,7 +60,60 @@ export function receiptDoc(
   if (order.payment.change > 0) blocks.push({ type: "row", left: "Change", right: money(order.payment.change) });
   if (setup.store.receiptFooter) blocks.push({ type: "feed" }, { type: "text", text: setup.store.receiptFooter, align: "center" });
   blocks.push({ type: "feed" }, { type: "barcode", data: order.number });
+  if (setup.publicUrl) {
+    blocks.push(
+      { type: "feed" },
+      { type: "qr", data: `${setup.publicUrl}/r/${order.id}` },
+      { type: "text", text: "Scan for your digital receipt", align: "center" },
+    );
+  }
   return { blocks, cut: true, openDrawer: opts.openDrawer ?? false };
+}
+
+/**
+ * The shift report. X: printed mid-shift, changes nothing. Z: printed at close with the
+ * counted cash and the difference; it ends the shift's numbers for the day.
+ */
+export function shiftReportDoc(
+  setup: DeviceSetup,
+  session: Pick<Session, "seq" | "openedAt">,
+  summary: ShiftSummary,
+  opts: { kind: "X" | "Z"; userName: string; counted?: number; note?: string; at?: Date },
+): ReceiptDoc {
+  const fmt = (d: Date | string) =>
+    new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeStyle: "short", timeZone: setup.store.timezone }).format(new Date(d));
+  const label: Record<string, string> = { cash: "Cash", card: "Card", card_manual: "Card (manual)" };
+  const blocks: Block[] = [
+    { type: "text", text: setup.store.name, align: "center", bold: true },
+    { type: "text", text: `${opts.kind} REPORT`, align: "center", bold: true, double: true },
+    { type: "row", left: `${setup.register.name} · shift ${session.seq}`, right: "" },
+    { type: "row", left: "Opened", right: fmt(session.openedAt) },
+    { type: "row", left: opts.kind === "Z" ? "Closed" : "Printed", right: fmt(opts.at ?? new Date()) },
+    { type: "row", left: "By", right: opts.userName },
+    { type: "rule" },
+    { type: "row", left: "Bills", right: String(summary.orderCount) },
+    { type: "row", left: "Sales total", right: money(summary.total), bold: true },
+    { type: "row", left: "VAT", right: money(summary.taxTotal) },
+    { type: "rule" },
+  ];
+  for (const [kind, amount] of Object.entries(summary.byKind)) blocks.push({ type: "row", left: label[kind] ?? kind, right: money(amount) });
+  blocks.push(
+    { type: "rule" },
+    { type: "row", left: "Opening cash", right: money(summary.openingCash) },
+    { type: "row", left: "Cash sales", right: money(summary.cashSales) },
+    { type: "row", left: "Cash in", right: money(summary.cashIn) },
+    { type: "row", left: "Cash out", right: `-${money(summary.cashOut)}` },
+    { type: "row", left: "Expected cash", right: money(summary.expectedCash), bold: true },
+  );
+  if (opts.counted !== undefined) {
+    blocks.push(
+      { type: "row", left: "Counted", right: money(opts.counted), bold: true },
+      { type: "row", left: "Difference", right: money(opts.counted - summary.expectedCash), bold: true },
+    );
+    if (opts.note) blocks.push({ type: "text", text: `Reason: ${opts.note}` });
+  }
+  blocks.push({ type: "feed" }, { type: "text", text: "Signature: ____________________" });
+  return { blocks, cut: true, openDrawer: false };
 }
 
 /** A cash sale or a cash refund needs the drawer. */

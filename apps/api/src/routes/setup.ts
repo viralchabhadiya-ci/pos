@@ -1,7 +1,7 @@
 import type { Db } from "../db.js";
 
 /** Everything a till needs to know about where it is, returned on pairing and on refresh. */
-export async function loadDeviceSetup(db: Db, registerId: string) {
+export async function loadDeviceSetup(db: Db, registerId: string, role: "till" | "display" = "till") {
   const { rows } = await db.query(
     `SELECT r.id AS register_id, r.code AS register_code, r.name AS register_name,
             s.id AS store_id, s.code AS store_code, s.name AS store_name, s.name_ar AS store_name_ar,
@@ -34,6 +34,9 @@ export async function loadDeviceSetup(db: Db, registerId: string) {
       receiptFooter: r.receipt_footer,
     },
     register: { id: r.register_id, code: r.register_code, name: r.register_name },
+    device: { role },
+    /** Where customers open digital receipts (the QR on the receipt); null when not set up. */
+    publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, "") || null,
     lastSessionSeq: seq.rows[0].last_seq as number,
     openSession: open.rows[0]
       ? {
