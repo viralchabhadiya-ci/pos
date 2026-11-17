@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { Db, Tx } from "../../db.js";
 import { HttpError } from "../../errors.js";
+import { planUsage } from "../../tenants.js";
 import { hashToken, newDeviceToken, verifyPassword } from "../../security.js";
 
 const LoginSchema = z.object({ email: z.string().trim().email(), password: z.string().min(1).max(200) });
@@ -9,6 +11,25 @@ const LoginSchema = z.object({ email: z.string().trim().email(), password: z.str
 const SESSION_DAYS = 14;
 /** After this many failed sign-ins in 15 minutes, an email is locked for the rest of that window. */
 const MAX_FAILURES = 5;
+
+/**
+ * Opens a back office session and returns its token. A support session (opened by platform
+ * staff from the platform console) is short and remembers who opened it and why.
+ */
+export async function openAdminSession(
+  db: Db | Tx,
+  userId: string,
+  tenantId: string,
+  support?: { by: string; reason: string; minutes: number },
+) {
+  const { token, hash } = newDeviceToken();
+  await db.query(
+    `INSERT INTO admin_sessions (id, token_hash, user_id, tenant_id, expires_at, support_by, support_reason)
+     VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5), $6, $7)`,
+    [randomUUID(), hash, userId, tenantId, support ? support.minutes : SESSION_DAYS * 24 * 60, support?.by ?? null, support?.reason ?? null],
+  );
+  return token;
+}
 
 export async function authRoutes(app: FastifyInstance) {
   app.post("/login", async (req) => {
@@ -21,7 +42,7 @@ export async function authRoutes(app: FastifyInstance) {
       throw new HttpError(429, "too_many_attempts", "Too many wrong passwords. Try again in 15 minutes.");
     }
     const { rows } = await app.db.query(
-      `SELECT u.id, u.tenant_id, u.name, u.role, u.password_hash, t.name AS tenant_name
+      `SELECT u.id, u.tenant_id, u.name, u.role, u.password_hash, t.name AS tenant_name, t.status AS tenant_status
          FROM users u JOIN tenants t ON t.id = u.tenant_id
         WHERE lower(u.email) = lower($1) AND u.active AND u.role IN ('owner', 'manager')`,
       [email],
@@ -32,12 +53,16 @@ export async function authRoutes(app: FastifyInstance) {
       throw new HttpError(401, "bad_credentials", "Email or password is wrong");
     }
     await app.db.query("DELETE FROM login_attempts WHERE lower(email) = lower($1)", [email]);
-    const { token, hash } = newDeviceToken();
-    await app.db.query(
-      `INSERT INTO admin_sessions (id, token_hash, user_id, tenant_id, expires_at)
-       VALUES ($1, $2, $3, $4, now() + make_interval(days => $5))`,
-      [randomUUID(), hash, user.id, user.tenant_id, SESSION_DAYS],
-    );
+    if (user.tenant_status === "suspended" || user.tenant_status === "cancelled") {
+      throw new HttpError(
+        403,
+        "account_" + user.tenant_status,
+        user.tenant_status === "suspended"
+          ? "This business account is paused. Your tills keep selling; contact support to sign in again."
+          : "This business account is closed. Contact support if you need your data.",
+      );
+    }
+    const token = await openAdminSession(app.db, user.id, user.tenant_id);
     await app.db.query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
     return {
       token,
@@ -57,15 +82,18 @@ export async function authRoutes(app: FastifyInstance) {
   app.get("/me", async (req) => {
     const ctx = await app.authAdmin(req);
     const { rows } = await app.db.query(
-      `SELECT t.name, t.currency, COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'code', s.code, 'timezone', s.timezone)
+      `SELECT t.name, t.currency, t.status, t.trial_ends_at, COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'code', s.code, 'timezone', s.timezone)
                 ORDER BY s.code) FILTER (WHERE s.id IS NOT NULL), '[]') AS stores
          FROM tenants t LEFT JOIN stores s ON s.tenant_id = t.id WHERE t.id = $1 GROUP BY t.id`,
       [ctx.tenantId],
     );
+    const usage = await planUsage(app.db, ctx.tenantId);
     return {
       user: { id: ctx.userId, name: ctx.name, role: ctx.role },
       tenant: { id: ctx.tenantId, name: rows[0].name, currency: rows[0].currency },
       stores: rows[0].stores,
+      account: { status: rows[0].status, trialEndsAt: rows[0].trial_ends_at, ...usage },
+      support: ctx.support ?? null,
     };
   });
 }

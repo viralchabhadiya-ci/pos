@@ -13,7 +13,7 @@ export async function adminAudit(
 ) {
   await db.query(
     `INSERT INTO audit_log (tenant_id, user_id, action, entity, entity_id, data) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [ctx.tenantId, ctx.userId, action, entity, entityId, JSON.stringify(data)],
+    [ctx.tenantId, ctx.userId, action, entity, entityId, JSON.stringify(ctx.support ? { ...data, support: ctx.support.by } : data)],
   );
 }
 

@@ -29,7 +29,8 @@ export function BarChart({
 }) {
   const [active, setActive] = useState<string | null>(null);
   const max = Math.max(...bars.map((b) => b.value), 0);
-  const top = max > 0 ? niceMax(max) : 1;
+  // An empty chart still gets a readable scale (100.00) instead of 0.01 steps.
+  const top = max > 0 ? niceMax(max) : 10_000;
   const W = 100 / bars.length;
   const shown = bars.find((b) => b.key === active);
   return (
