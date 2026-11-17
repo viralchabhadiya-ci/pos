@@ -349,7 +349,10 @@ describe("e-invoice queue", () => {
     });
     await fastForward();
     await processDue(ctx.db);
+    // Both were due together: the invoice went first and was accepted, then the credit
+    // note had its own first try, which the flaky simulator fails.
     expect((await einvoiceOf(sale.id)).einvoice!.status).toBe("accepted");
+    expect((await einvoiceOf(refund.id)).einvoice).toMatchObject({ status: "pending", attempts: 1 });
     await fastForward();
     await processDue(ctx.db);
     const cn = (await einvoiceOf(refund.id)).einvoice!;

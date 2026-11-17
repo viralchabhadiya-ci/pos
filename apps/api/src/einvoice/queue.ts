@@ -269,11 +269,13 @@ async function claim(db: Db, limit: number, onlyId?: string): Promise<string[]> 
         SELECT x.id FROM einvoices x JOIN einvoice_settings s ON s.tenant_id = x.tenant_id AND s.enabled
          WHERE ((x.status = 'pending' AND x.next_attempt_at <= now()) OR (x.status = 'sending' AND x.locked_until < now()))
            AND ($3::uuid IS NULL OR x.id = $3)
-         ORDER BY x.next_attempt_at LIMIT $1 FOR UPDATE OF x SKIP LOCKED)
-      RETURNING e.id`,
+         -- Oldest first on ties, so an invoice goes before its credit note.
+         ORDER BY x.next_attempt_at, x.created_at, x.id LIMIT $1 FOR UPDATE OF x SKIP LOCKED)
+      RETURNING e.id, e.created_at`,
     [limit, LOCK_SECONDS, onlyId ?? null],
   );
-  return rows.map((r) => r.id);
+  // RETURNING does not keep the subquery's order.
+  return rows.sort((a, b) => a.created_at - b.created_at || String(a.id).localeCompare(b.id)).map((r) => r.id);
 }
 
 /** Sends everything that is due, in batches. Returns how many documents were handled. */
