@@ -130,6 +130,17 @@ describe("store hub", () => {
     expect(sale.json().results).toEqual([expect.objectContaining({ id: order.id, status: "created" })]);
     expect(sale.json().results[0].queued).toBeUndefined();
 
+    // Card terminal calls pass straight through to the cloud.
+    const terminal = await hub.app.inject({ method: "GET", url: "/card/terminal", headers: tillA });
+    expect(terminal.json()).toEqual({ terminal: null });
+    const card = await hub.app.inject({
+      method: "POST",
+      url: "/card/payments",
+      headers: tillA,
+      payload: { id: randomUUID(), amount: 500, orderId: randomUUID() },
+    });
+    expect(card.json().error).toBe("no_terminal");
+
     const catalog = await hub.app.inject({ method: "GET", url: "/sync/catalog", headers: tillA });
     expect(catalog.json().variants).toHaveLength(data.variants.length);
     await hub.refreshCatalogs();
@@ -210,6 +221,17 @@ describe("store hub", () => {
 
     const report = await hub.app.inject({ method: "GET", url: "/reports/daily", headers: tillA });
     expect(report.statusCode).toBe(503);
+
+    // A card payment is never queued for later: the till must know now whether the card was charged.
+    const pending = (await hub.app.inject({ method: "GET", url: "/hub/info" })).json().pending;
+    const card = await hub.app.inject({
+      method: "POST",
+      url: "/card/payments",
+      headers: tillA,
+      payload: { id: randomUUID(), amount: 500, orderId: randomUUID() },
+    });
+    expect(card.statusCode).toBe(503);
+    expect((await hub.app.inject({ method: "GET", url: "/hub/info" })).json().pending).toBe(pending);
   });
 
   it("closes the shift offline and the register shows no open shift", async () => {

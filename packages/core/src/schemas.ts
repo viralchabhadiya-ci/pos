@@ -20,6 +20,8 @@ export const PaymentSchema = z.object({
   amount: z.number().int(),
   tendered: z.number().int().optional(),
   reference: z.string().max(100).optional(),
+  /** The integrated terminal's card payment that paid this, when there is one. */
+  cardTransactionId: z.string().uuid().optional(),
 });
 
 export const OrderSyncSchema = z.object({

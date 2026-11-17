@@ -1,8 +1,8 @@
 import type { DeviceContext } from "../app.js";
-import type { Tx } from "../db.js";
+import type { Db, Tx } from "../db.js";
 
 export async function audit(
-  tx: Tx,
+  tx: Db | Tx,
   device: DeviceContext,
   userId: string | null,
   action: string,

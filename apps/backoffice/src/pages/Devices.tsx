@@ -8,6 +8,7 @@ import { api, errorText } from "../lib/api.js";
 import { ago, time } from "../lib/format.js";
 import type { Device, Me, Register } from "../lib/types.js";
 import { useLoad } from "../lib/useLoad.js";
+import { CardTerminals } from "./CardTerminals.js";
 
 export function Devices({ me }: { me: Me }) {
   const list = useLoad(() => api<{ registers: Register[] }>("/registers"), []);
@@ -99,6 +100,7 @@ export function Devices({ me }: { me: Me }) {
           </section>
         ))
       )}
+      {list.data && <CardTerminals registers={registers} />}
       {pairing && <PairDialog register={pairing} onClose={() => (setPairing(null), void list.reload())} />}
       {revoking && (
         <RevokeDialog
