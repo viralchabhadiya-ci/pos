@@ -52,6 +52,14 @@ const BlockSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("feed"), lines: z.number().int().min(1).max(10).optional() }),
   z.object({ type: z.literal("barcode"), data: z.string().min(1).max(60) }),
   z.object({ type: z.literal("qr"), data: z.string().min(1).max(500) }),
+  // Text the printer fonts lack (Arabic), drawn by the till. 1-bit rows, base64; checked
+  // against width x height again when encoded.
+  z.object({
+    type: z.literal("image"),
+    width: z.number().int().min(8).max(1024).refine((w) => w % 8 === 0, "width must be a multiple of 8"),
+    height: z.number().int().min(1).max(20_000),
+    data: z.string().max(3_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/),
+  }),
 ]);
 
 const PrintSchema = z.object({
@@ -209,7 +217,12 @@ export async function buildHub(config: HubConfig, opts: { logger?: boolean; stor
     await device(req);
     const { doc, copies } = PrintSchema.parse(req.body);
     if (!config.printer) throw new HubError(503, "no_printer", "No receipt printer is set up on the hub");
-    const bytes = encodeReceipt(doc as ReceiptDoc, { width: config.printer.width });
+    let bytes: Uint8Array;
+    try {
+      bytes = encodeReceipt(doc as ReceiptDoc, { width: config.printer.width });
+    } catch (err) {
+      throw new HubError(400, "bad_document", (err as Error).message);
+    }
     try {
       for (let i = 0; i < (copies ?? 1); i += 1) {
         // Only the first copy opens the drawer.

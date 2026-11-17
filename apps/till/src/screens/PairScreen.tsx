@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { pairDevice } from "../lib/till.js";
 import { pullCatalog } from "../lib/sync.js";
 import { Icon } from "../components/Icon.js";
+import { LangSwitch } from "../components/LangSwitch.js";
+import { t } from "../lib/i18n.js";
 
 export function PairScreen({ onPaired }: { onPaired: () => void }) {
   const [apiUrl, setApiUrl] = useState(() => import.meta.env.VITE_API_URL ?? "http://localhost:3000");
@@ -28,12 +30,17 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
   return (
     <main className="center">
       <form className="card narrow" onSubmit={submit}>
-        <h1>Set up this till</h1>
-        <p className="lead">Enter the 6-digit pairing code shown in the back office (Devices, Add device).</p>
-        <label htmlFor="api">Server address</label>
+        <div className="card-top">
+          <h1>{t("Set up this till")}</h1>
+          <LangSwitch />
+        </div>
+        <p className="lead">{t("Enter the 6-digit pairing code shown in the back office (Devices, Add device).")}</p>
+        <label htmlFor="api">{t("Server address")}</label>
         <input id="api" type="url" inputMode="url" autoComplete="off" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} aria-describedby="api-help" required />
-        <p id="api-help" className="muted" style={{ marginTop: 8, fontSize: 14 }}>The store hub (http://hub-pc:4100) or the cloud address.</p>
-        <label htmlFor="code">Pairing code</label>
+        <p id="api-help" className="muted" style={{ marginTop: 8, fontSize: 14 }}>
+          {t("The store hub (http://hub-pc:4100) or the cloud address.")}
+        </p>
+        <label htmlFor="code">{t("Pairing code")}</label>
         <input
           id="code"
           inputMode="numeric"
@@ -45,7 +52,7 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
           autoComplete="one-time-code"
           autoFocus
         />
-        <label htmlFor="name">Device name</label>
+        <label htmlFor="name">{t("Device name")}</label>
         <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
         {error && (
           <p className="error" role="alert">
@@ -54,7 +61,7 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
           </p>
         )}
         <button className="btn primary block" disabled={busy || code.length !== 6}>
-          {busy ? "Pairing…" : "Pair device"}
+          {busy ? t("Pairing…") : t("Pair device")}
         </button>
       </form>
     </main>

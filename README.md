@@ -48,6 +48,8 @@ A new pairing code: `pnpm --filter @pos/api pair <registerId>`, or **Tills & dev
 - **Digital receipt:** set `PUBLIC_URL` on the API to its public address. Every printed receipt then
   carries a QR code that opens `/r/<order id>`, a bilingual tax invoice page the customer can keep.
   The id is a random UUID, so only someone holding the receipt can open it.
+- **Arabic:** the العربية / English button in the top bar switches the till between English and
+  Arabic, right to left. Each till remembers its own choice. Keypads keep their usual order.
 - **Customer display:** the screen the customer sees, with items in English and Arabic, totals, change
   and the receipt QR after payment. Two ways:
   - a second monitor on the same PC: Menu → Customer screen on this PC, then drag the window across;
@@ -109,8 +111,10 @@ What the hub does:
   `GET /hub/rejections` and shown on the tills as "N rejected at hub".
 - **Printer:** `POST /hub/print` sends the receipt to a network printer on port 9100 (Epson, Star,
   Xprinter, Rongta in raw mode). After a sale the till prints by itself and a cash sale opens the
-  drawer. Menu → Open drawer asks for a manager PIN. Printer text is English only for now; Arabic
-  needs raster printing.
+  drawer. Menu → Open drawer asks for a manager PIN. Receipts print in English and Arabic by default
+  (Menu → Printed receipts switches a till to English only). Printer fonts have no Arabic, so the
+  till draws the text with the bundled Noto Sans Arabic and sends it as raster images (ESC/POS
+  `GS v 0`); barcodes and QR codes stay native. Plain-English documents still print as text.
 
 The hub's data folder holds device tokens, so keep it on the store PC.
 
@@ -140,5 +144,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 ## Next
 
 Integrated card terminal, super admin (businesses, subscriptions,
-support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing, Arabic raster receipts,
+support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing,
 Windows/Android packaging. See the roadmap in the PRD.

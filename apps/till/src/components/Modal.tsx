@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { t } from "../lib/i18n.js";
 import { Icon } from "./Icon.js";
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select, textarea, [href], [tabindex]:not([tabindex="-1"])';
@@ -52,7 +53,7 @@ export function Modal({ children, onClose, wide, label }: { children: ReactNode;
         onKeyDown={onKeyDown}
       >
         {onClose && (
-          <button type="button" className="icon-btn modal-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="icon-btn modal-close" onClick={onClose} aria-label={t("Close")}>
             <Icon name="close" />
           </button>
         )}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PinPad } from "../components/PinPad.js";
 import { db, type User } from "../lib/db.js";
+import { t } from "../lib/i18n.js";
 import { verifyPin } from "../lib/pin.js";
 
 /** Cashiers sign in with their PIN only; the PIN identifies them. Works offline. */
@@ -18,12 +19,12 @@ export function LoginScreen({ onLogin }: { onLogin: (user: User) => void }) {
       }
     }
     setBusy(false);
-    setError(users.length ? "Wrong PIN, try again" : "No staff loaded yet. Connect to the internet once to sync.");
+    setError(users.length ? t("Wrong PIN, try again") : t("No staff loaded yet. Connect to the internet once to sync."));
   };
   return (
     <main className="center">
       <div className="card narrow">
-        <PinPad title="Enter your PIN" error={error} busy={busy} onSubmit={submit} />
+        <PinPad title={t("Enter your PIN")} error={error} busy={busy} onSubmit={submit} />
       </div>
     </main>
   );

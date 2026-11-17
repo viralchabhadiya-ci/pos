@@ -1,20 +1,40 @@
 import type { Block, ReceiptDoc } from "@pos/escpos";
 import { request } from "./api.js";
+import { forPrinter } from "./raster.js";
+import { syncStore } from "./sync.js";
 import type { DeviceSetup, LocalOrder, PaymentMethod, Session } from "./db.js";
 import type { ShiftSummary } from "./till.js";
 import { money, qtyText } from "./format.js";
 
+/** "en": English labels. "bilingual": English and Arabic, as UAE shoppers expect. */
+export type ReceiptLang = "en" | "bilingual";
+
+const METHOD_AR: Record<string, string> = { cash: "نقدًا", card: "بطاقة", card_manual: "بطاقة" };
+
 /**
  * The receipt as a printer-neutral document for the store hub's thermal printer. It carries
- * the same tax-invoice fields as the on-screen receipt. Labels are English only because
- * the printers' built-in fonts have no Arabic; Arabic comes with raster printing.
+ * the same tax-invoice fields as the on-screen receipt. With Arabic, printOnHub draws the
+ * text as raster images, because the printers' built-in fonts have no Arabic.
  */
 export function receiptDoc(
   setup: DeviceSetup,
   order: LocalOrder,
-  opts: { cashierName: string; methods: Pick<PaymentMethod, "id" | "name">[]; originalNumber?: string; openDrawer?: boolean },
+  opts: {
+    cashierName: string;
+    methods: Pick<PaymentMethod, "id" | "name">[];
+    originalNumber?: string;
+    openDrawer?: boolean;
+    lang?: ReceiptLang;
+    /** Arabic item names by variant id. */
+    arabicNames?: Map<string, string | null>;
+  },
 ): ReceiptDoc {
+  const ar = opts.lang === "bilingual";
+  // The Arabic half is a bidi isolate (FSI ... PDI) so numbers in it, like "5%", stay with
+  // their Arabic words instead of jumping across the English half.
+  const L = (en: string, arabic: string) => (ar ? `${en} / \u2068${arabic}\u2069` : en);
   const notes = new Map(order.lines.map((l) => [l.id, l.note]));
+  const variants = new Map(order.lines.map((l) => [l.id, l.variantId]));
   const refund = order.refundOfOrderId !== null;
   const date = new Intl.DateTimeFormat("en-GB", {
     dateStyle: "short",
@@ -24,41 +44,43 @@ export function receiptDoc(
   const blocks: Block[] = [
     { type: "text", text: setup.store.name, align: "center", bold: true, double: true },
   ];
+  if (ar && setup.store.nameAr) blocks.push({ type: "text", text: setup.store.nameAr, align: "center", bold: true, double: true });
   if (setup.store.address) blocks.push({ type: "text", text: setup.store.address, align: "center" });
-  if (setup.store.phone) blocks.push({ type: "text", text: `Tel ${setup.store.phone}`, align: "center" });
-  if (setup.store.trn) blocks.push({ type: "text", text: `TRN ${setup.store.trn}`, align: "center" });
-  blocks.push(
-    { type: "text", text: refund ? "TAX CREDIT NOTE" : "TAX INVOICE", align: "center", bold: true },
-    { type: "row", left: `No. ${order.number}`, right: date },
-  );
-  if (refund) blocks.push({ type: "text", text: `Ref. invoice: ${opts.originalNumber ?? order.refundOfOrderId}` });
-  blocks.push({ type: "text", text: `Cashier: ${opts.cashierName}` }, { type: "rule" });
+  if (setup.store.phone) blocks.push({ type: "text", text: `${L("Tel", "هاتف")} ${setup.store.phone}`, align: "center" });
+  if (setup.store.trn) blocks.push({ type: "text", text: `${L("TRN", "الرقم الضريبي")} ${setup.store.trn}`, align: "center" });
+  blocks.push({ type: "text", text: refund ? "TAX CREDIT NOTE" : "TAX INVOICE", align: "center", bold: true });
+  if (ar) blocks.push({ type: "text", text: refund ? "إشعار دائن ضريبي" : "فاتورة ضريبية", align: "center", bold: true });
+  blocks.push({ type: "row", left: `${L("No.", "رقم")} ${order.number}`, right: date });
+  if (refund) blocks.push({ type: "text", text: `${L("Ref. invoice", "الفاتورة الأصلية")}: ${opts.originalNumber ?? order.refundOfOrderId}` });
+  blocks.push({ type: "text", text: `${L("Cashier", "الكاشير")}: ${opts.cashierName}` }, { type: "rule" });
 
   for (const l of order.totals.lines) {
     const uom = Number.isInteger(l.qty) ? "unit" : "kg";
     const discount = l.lineDiscount ? ` (-${money(Math.abs(l.lineDiscount))})` : "";
-    blocks.push(
-      { type: "text", text: l.name },
-      { type: "row", left: `  ${qtyText(Math.abs(l.qty), uom)} x ${money(l.unitPrice)}${discount}`, right: money(l.gross) },
-    );
+    blocks.push({ type: "text", text: l.name });
+    const nameAr = ar ? opts.arabicNames?.get(variants.get(l.id) ?? "") : null;
+    if (nameAr) blocks.push({ type: "text", text: nameAr });
+    blocks.push({ type: "row", left: `  ${qtyText(Math.abs(l.qty), uom)} x ${money(l.unitPrice)}${discount}`, right: money(l.gross) });
     const note = notes.get(l.id);
-    if (note) blocks.push({ type: "text", text: `  Note: ${note}` });
+    if (note) blocks.push({ type: "text", text: `  ${L("Note", "ملاحظة")}: ${note}` });
   }
-  blocks.push({ type: "rule" }, { type: "row", left: "Total excl. VAT", right: money(order.totals.subtotalNet) });
-  for (const t of order.totals.taxes) blocks.push({ type: "row", left: `VAT ${t.rateBp / 100}%`, right: money(t.tax) });
-  blocks.push({ type: "row", left: "Total AED", right: money(order.totals.total), bold: true });
+  blocks.push({ type: "rule" }, { type: "row", left: L("Total excl. VAT", "المجموع بدون الضريبة"), right: money(order.totals.subtotalNet) });
+  for (const t of order.totals.taxes) {
+    blocks.push({ type: "row", left: L(`VAT ${t.rateBp / 100}%`, `ضريبة القيمة المضافة ${t.rateBp / 100}%`), right: money(t.tax) });
+  }
+  blocks.push({ type: "row", left: L("Total AED", "الإجمالي درهم"), right: money(order.totals.total), bold: true });
   if (order.payment.cashRounding !== 0) {
     blocks.push(
-      { type: "row", left: "Cash rounding", right: money(order.payment.cashRounding) },
-      { type: "row", left: "Payable AED", right: money(order.payment.due), bold: true },
+      { type: "row", left: L("Cash rounding", "تقريب نقدي"), right: money(order.payment.cashRounding) },
+      { type: "row", left: L("Payable AED", "المبلغ المستحق درهم"), right: money(order.payment.due), bold: true },
     );
   }
   blocks.push({ type: "rule" });
   for (const p of order.payments) {
     const name = opts.methods.find((m) => m.id === p.methodId)?.name ?? p.kind;
-    blocks.push({ type: "row", left: name, right: money(p.tendered ?? p.amount) });
+    blocks.push({ type: "row", left: ar && METHOD_AR[p.kind] ? L(name, METHOD_AR[p.kind]!) : name, right: money(p.tendered ?? p.amount) });
   }
-  if (order.payment.change > 0) blocks.push({ type: "row", left: "Change", right: money(order.payment.change) });
+  if (order.payment.change > 0) blocks.push({ type: "row", left: L("Change", "الباقي"), right: money(order.payment.change) });
   if (setup.store.receiptFooter) {
     blocks.push({ type: "feed" });
     // "|" in the footer starts a new line (e.g. English | Arabic).
@@ -72,6 +94,7 @@ export function receiptDoc(
       { type: "feed" },
       { type: "qr", data: `${setup.publicUrl}/r/${order.id}` },
       { type: "text", text: "Scan for your digital receipt", align: "center" },
+      ...(ar ? [{ type: "text" as const, text: "امسح الرمز للإيصال الرقمي", align: "center" as const }] : []),
     );
   }
   return { blocks, cut: true, openDrawer: opts.openDrawer ?? false };
@@ -128,8 +151,32 @@ export function needsDrawer(order: LocalOrder): boolean {
   return order.payments.some((p) => p.kind === "cash");
 }
 
+/**
+ * Sends a document to the hub's printer. Arabic (or any text the printer fonts lack, such
+ * as an Arabic cashier name on an X report) is drawn into raster images first.
+ */
 export async function printOnHub(doc: ReceiptDoc) {
-  await request("/hub/print", { body: { doc } });
+  const chars = syncStore.get().hub?.printer?.width ?? 48;
+  await request("/hub/print", { body: { doc: await forPrinter(doc, chars) } });
+}
+
+const RECEIPT_LANG_KEY = "till.receiptLang";
+
+/** This device's printed receipt language; English + Arabic unless changed in the menu. */
+export function getReceiptLang(): ReceiptLang {
+  try {
+    return localStorage.getItem(RECEIPT_LANG_KEY) === "en" ? "en" : "bilingual";
+  } catch {
+    return "bilingual";
+  }
+}
+
+export function setReceiptLang(lang: ReceiptLang) {
+  try {
+    localStorage.setItem(RECEIPT_LANG_KEY, lang);
+  } catch {
+    /* private mode: the default stays */
+  }
 }
 
 export async function openDrawerOnHub() {

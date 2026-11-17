@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { t } from "../lib/i18n.js";
 import { Icon } from "./Icon.js";
 
 /**
@@ -17,7 +18,7 @@ export function Toast({ message, onDone, ms = 4000 }: { message: string | null; 
         <div className="toast">
           <Icon name="alert" />
           <span>{message}</span>
-          <button type="button" className="icon-btn" onClick={onDone} aria-label="Dismiss">
+          <button type="button" className="icon-btn" onClick={onDone} aria-label={t("Dismiss")}>
             <Icon name="close" size={18} />
           </button>
         </div>

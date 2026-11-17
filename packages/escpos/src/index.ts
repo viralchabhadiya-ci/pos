@@ -11,7 +11,13 @@ export type Block =
   | { type: "rule" }
   | { type: "feed"; lines?: number }
   | { type: "barcode"; data: string }
-  | { type: "qr"; data: string };
+  | { type: "qr"; data: string }
+  /**
+   * A 1-bit picture: rows of `width / 8` bytes, most significant bit on the left, 1 = black,
+   * base64 encoded. Text in scripts the printer fonts lack (Arabic) is drawn by the till
+   * and sent this way. `width` is a multiple of 8, at most the paper's dot width.
+   */
+  | { type: "image"; width: number; height: number; data: string };
 
 export interface ReceiptDoc {
   blocks: Block[];
@@ -46,8 +52,8 @@ export const commands = {
 
 /**
  * Thermal printers' built-in fonts are single-byte. Characters outside printable ASCII
- * (Arabic, accents) are replaced with "?" here; Arabic needs raster printing, which
- * will come with the image-based renderer.
+ * (Arabic, accents) are replaced with "?" here. Documents with Arabic reach the printer
+ * as "image" blocks instead: the till draws that text and sends the picture.
  */
 export function toPrinterText(text: string): number[] {
   const out: number[] = [];
@@ -61,8 +67,71 @@ export function toPrinterText(text: string): number[] {
   return out;
 }
 
+/** True when a document has text the printer's built-in fonts cannot print. */
+export function needsRaster(doc: ReceiptDoc): boolean {
+  const nonAscii = /[^\x20-\x7e]/;
+  return doc.blocks.some((b) =>
+    b.type === "text" ? nonAscii.test(b.text) : b.type === "row" ? nonAscii.test(b.left) || nonAscii.test(b.right) : false,
+  );
+}
+
+/** Paper width in printer dots for a characters-per-line setting: 576 on 80 mm, 384 on 58 mm. */
+export function dotsForWidth(chars: number): number {
+  return chars >= 42 ? 576 : 384;
+}
+
+/**
+ * Packs RGBA pixels (as from a canvas) into 1-bit rows. A pixel prints black when it is
+ * darker than `threshold` (0-255); transparent pixels count as white paper.
+ */
+export function packRaster(rgba: ArrayLike<number>, width: number, height: number, threshold = 140): { width: number; height: number; bytes: Uint8Array } {
+  const stride = Math.ceil(width / 8);
+  const bytes = new Uint8Array(stride * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      const alpha = rgba[i + 3]! / 255;
+      const lum = (0.299 * rgba[i]! + 0.587 * rgba[i + 1]! + 0.114 * rgba[i + 2]!) * alpha + 255 * (1 - alpha);
+      if (lum < threshold) bytes[y * stride + (x >> 3)]! |= 0x80 >> (x & 7);
+    }
+  }
+  return { width: stride * 8, height, bytes };
+}
+
+export function toBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+export function fromBase64(data: string): Uint8Array {
+  const bin = atob(data);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Rows per GS v 0 command; printers with small buffers choke on one huge image. */
+export const RASTER_BAND = 128;
+
+/** GS v 0 (print raster bit image), split into bands of RASTER_BAND rows. */
+export function rasterBytes(width: number, height: number, bytes: Uint8Array): number[] {
+  const stride = width / 8;
+  if (!Number.isInteger(stride) || stride < 1) throw new Error("Image width must be a multiple of 8");
+  if (bytes.length !== stride * height) throw new Error(`Image data is ${bytes.length} bytes, expected ${stride * height}`);
+  const out: number[] = [];
+  for (let y = 0; y < height; y += RASTER_BAND) {
+    const rows = Math.min(RASTER_BAND, height - y);
+    out.push(GS, 0x76, 0x30, 0, stride & 0xff, stride >> 8, rows & 0xff, rows >> 8);
+    const band = bytes.subarray(y * stride, (y + rows) * stride);
+    for (let i = 0; i < band.length; i += 1) out.push(band[i]!);
+  }
+  return out;
+}
+
 /** Keeps only the ASCII part of a bilingual label such as "Total AED / الإجمالي". */
 export function asciiPart(text: string): string {
+  if (/^[\x00-\x7f]*$/.test(text)) return text;
   const cleaned = text
     .split("/")
     .map((s) => s.trim())
@@ -131,7 +200,7 @@ export function encodeReceipt(doc: ReceiptDoc, opts: EncodeOptions = {}): Uint8A
         out.push(...(b.align === "center" ? commands.alignCenter : b.align === "right" ? commands.alignRight : commands.alignLeft));
         if (b.bold) out.push(...commands.boldOn);
         if (b.double) out.push(...commands.doubleOn);
-        for (const l of wrap(b.text, b.double ? Math.floor(width / 2) : width)) line(l);
+        for (const l of wrap(asciiPart(b.text), b.double ? Math.floor(width / 2) : width)) line(l);
         if (b.double) out.push(...commands.doubleOff);
         if (b.bold) out.push(...commands.boldOff);
         out.push(...commands.alignLeft);
@@ -139,7 +208,7 @@ export function encodeReceipt(doc: ReceiptDoc, opts: EncodeOptions = {}): Uint8A
       }
       case "row":
         if (b.bold) out.push(...commands.boldOn);
-        for (const l of row(b.left, b.right, width)) line(l);
+        for (const l of row(asciiPart(b.left), asciiPart(b.right), width)) line(l);
         if (b.bold) out.push(...commands.boldOff);
         break;
       case "rule":
@@ -150,6 +219,9 @@ export function encodeReceipt(doc: ReceiptDoc, opts: EncodeOptions = {}): Uint8A
         break;
       case "qr":
         out.push(...commands.alignCenter, ...qrBytes(b.data), 0x0a, ...commands.alignLeft);
+        break;
+      case "image":
+        out.push(...commands.alignCenter, ...rasterBytes(b.width, b.height, fromBase64(b.data)), ...commands.alignLeft);
         break;
       case "barcode":
         out.push(...commands.alignCenter, ...barcodeBytes(b.data), 0x0a, ...commands.alignLeft);

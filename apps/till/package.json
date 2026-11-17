@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/noto-sans-arabic": "^5.3.0",
     "@pos/core": "workspace:*",
     "@pos/escpos": "workspace:*",
     "dexie": "^4.0.10",
