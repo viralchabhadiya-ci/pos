@@ -290,6 +290,7 @@ button.pill { min-height: 44px; }
 
 /* Payment */
 .paydlg { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); }
+.paydlg[hidden] { display: none; }
 .paydlg > div:last-child { display: flex; flex-direction: column; }
 .paydlg > div:last-child .actions { margin-top: auto; padding-top: var(--space-5); }
 .due { font-size: var(--text-lg); margin: var(--space-2) 0 var(--space-3); }
@@ -409,3 +410,22 @@ button.pill { min-height: 44px; }
 /* Clear, Note, Park and Pay share one row; longer Arabic labels must not push it wider. */
 .sell .actions { gap: var(--space-2); }
 .sell .actions .btn.ghost { padding-inline: 10px; flex-shrink: 1; min-width: 0; }
+/* Integrated card terminal */
+.spinner { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+.spinner.lg { width: 40px; height: 40px; border-width: 4px; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.cardpanel { display: flex; flex-direction: column; min-height: 380px; }
+.cardpanel h2 { font-size: var(--text-2xl); margin: var(--space-1) 0 var(--space-4); font-variant-numeric: tabular-nums; }
+.cardpanel > p { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.cp-state { flex: 1; display: grid; justify-items: center; align-content: center; gap: var(--space-2); text-align: center; padding: var(--space-5); border-radius: var(--radius); background: var(--surface-2); }
+.cp-state strong { font-size: var(--text-lg); }
+.cp-state span:not(.spinner) { color: var(--muted); max-width: 46ch; }
+.cp-state.approved { background: var(--good-soft); color: var(--good); }
+.cp-state.declined, .cp-state.cancelled, .cp-state.failed { background: var(--bad-soft); color: var(--bad); }
+.cp-state.unknown { background: var(--warn-soft); }
+.cardpanel .actions { display: flex; justify-content: flex-end; gap: var(--space-2); padding-top: var(--space-4); min-height: 76px; }
+.method-note { margin-inline-start: auto; font-size: var(--text-sm); font-weight: 400; color: var(--muted); }
+.stranded { position: fixed; top: 76px; left: 50%; transform: translateX(-50%); z-index: 60; width: min(760px, calc(100% - 32px)); display: grid; gap: var(--space-2); }
+.stranded-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--warn-soft); color: var(--fg); border: 1px solid var(--warn); border-radius: var(--radius); box-shadow: var(--shadow-3, 0 8px 24px rgb(0 0 0 / 0.15)); }
+.stranded-row > span { flex: 1 1 260px; }
+.stranded .error { background: var(--surface); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); color: var(--bad); margin: 0; }

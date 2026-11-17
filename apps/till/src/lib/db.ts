@@ -103,6 +103,26 @@ export interface ParkedSale {
   total: number;
 }
 
+/**
+ * Every card payment the till starts is written here first, so after a crash or reload the
+ * till can still ask what happened to it instead of charging the card again.
+ */
+export interface CardAttempt {
+  id: string;
+  orderId: string;
+  kind: "sale" | "refund";
+  amount: number;
+  status: "pending" | "approved" | "declined" | "cancelled" | "failed" | "unknown";
+  createdAt: string;
+  /** Set once the payment is on a completed sale or refund. */
+  usedAt?: string;
+  /** Set when the cashier has dealt with an approved payment that never reached a sale. */
+  resolvedAt?: string;
+  cardLast4?: string | null;
+  authCode?: string | null;
+  refundOf?: string;
+}
+
 export class TillDb extends Dexie {
   meta!: Table<Meta, string>;
   taxes!: Table<Tax, string>;
@@ -116,6 +136,7 @@ export class TillDb extends Dexie {
   orders!: Table<LocalOrder, string>;
   outbox!: Table<OutboxItem, number>;
   parked!: Table<ParkedSale, string>;
+  cardAttempts!: Table<CardAttempt, string>;
 
   constructor(name = "pos-till") {
     super(name);
@@ -133,6 +154,7 @@ export class TillDb extends Dexie {
       outbox: "++seq, kind, refId",
     });
     this.version(2).stores({ parked: "id, createdAt" });
+    this.version(3).stores({ cardAttempts: "id, orderId, createdAt" });
   }
 
   async getMeta<T>(key: string): Promise<T | undefined> {

@@ -103,10 +103,11 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
 
   for (const p of order.payments) {
     const change = Math.max(0, (p.tendered ?? p.amount) - p.amount);
+    const cardTx = p.cardTransactionId ? await linkCardPayment(tx, device, order, p) : null;
     await tx.query(
-      `INSERT INTO payments (id, order_id, method_id, kind, amount, tendered, change, reference)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [p.id, order.id, p.methodId, p.kind, p.amount, p.tendered ?? null, change, p.reference ?? null],
+      `INSERT INTO payments (id, order_id, method_id, kind, amount, tendered, change, reference, card_transaction_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [p.id, order.id, p.methodId, p.kind, p.amount, p.tendered ?? null, change, p.reference ?? null, cardTx],
     );
   }
 
@@ -120,6 +121,33 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     await audit(tx, device, order.cashierId, "order.discount", "order", order.id, { discount: totals.discountTotal });
   }
   return { id: order.id, status: "created", totalsMismatch: mismatch };
+}
+
+/**
+ * Ties a terminal payment to the order. The customer has already paid, so a problem never
+ * rejects the order; it is written to the audit log for the owner to look at.
+ */
+async function linkCardPayment(tx: Tx, device: DeviceContext, order: OrderSync, p: OrderSync["payments"][number]) {
+  const { rows } = await tx.query(
+    "SELECT id, kind, amount, status, order_id FROM card_transactions WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
+    [p.cardTransactionId, device.tenantId],
+  );
+  const c = rows[0];
+  if (!c) {
+    await audit(tx, device, order.cashierId, "order.card_mismatch", "order", order.id, { reason: "unknown card payment", amount: p.amount });
+    return null;
+  }
+  const expected = c.kind === "refund" ? -c.amount : c.amount;
+  if (c.status !== "approved" || expected !== p.amount || (c.order_id && c.order_id !== order.id)) {
+    await audit(tx, device, order.cashierId, "order.card_mismatch", "order", order.id, {
+      cardTransactionId: c.id,
+      status: c.status,
+      cardAmount: expected,
+      paid: p.amount,
+    });
+  }
+  await tx.query("UPDATE card_transactions SET order_id = $2, updated_at = now() WHERE id = $1", [c.id, order.id]);
+  return c.id as string;
 }
 
 /** A refund must point at a sale from this tenant and cannot return more than was sold. */

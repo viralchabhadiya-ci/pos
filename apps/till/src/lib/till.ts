@@ -91,7 +91,13 @@ export async function addCashMove(sessionId: string, userId: string, kind: "in" 
 }
 
 /** Saves a paid order and queues it for sync in one local transaction. */
-export async function completeOrder(cart: Cart, payments: PaymentInput[], cashierId: string): Promise<LocalOrder> {
+export async function completeOrder(
+  cart: Cart,
+  payments: PaymentInput[],
+  cashierId: string,
+  /** Made when payment starts, so card payments can point at the order before it exists. */
+  orderId: string = crypto.randomUUID(),
+): Promise<LocalOrder> {
   const setup = await getSetup();
   if (!setup) throw new Error("Device is not paired");
   const taxes = await taxMap();
@@ -99,13 +105,15 @@ export async function completeOrder(cart: Cart, payments: PaymentInput[], cashie
   const payment = checkPayments(totals.total, payments, setup.store.cashRoundingStep);
   if (!payment.complete) throw new Error("Payment does not cover the total");
 
-  return db.transaction("rw", [db.sessions, db.orders, db.outbox, db.meta], async () => {
+  return db.transaction("rw", [db.sessions, db.orders, db.outbox, db.meta, db.cardAttempts], async () => {
     const session = await currentSession();
     if (!session || session.state !== "open") throw new Error("Open a shift before selling");
+    const usedAt = new Date().toISOString();
+    for (const p of payments) if (p.cardTransactionId) await db.cardAttempts.update(p.cardTransactionId, { usedAt });
     const orderSeq = session.orderSeq + 1;
     await db.sessions.update(session.id, { orderSeq });
     const order: LocalOrder = {
-      id: crypto.randomUUID(),
+      id: orderId,
       number: formatReceiptNumber({
         storeCode: setup.store.code,
         registerCode: setup.register.code,

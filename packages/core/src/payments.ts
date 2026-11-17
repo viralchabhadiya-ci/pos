@@ -11,6 +11,8 @@ export interface PaymentInput {
   /** Cash handed over by the customer; change is tendered - amount. */
   tendered?: number;
   reference?: string;
+  /** The integrated terminal's card payment behind this payment. */
+  cardTransactionId?: string;
 }
 
 export interface PaymentCheck {

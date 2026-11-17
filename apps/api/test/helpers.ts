@@ -17,12 +17,12 @@ export interface Ctx {
 }
 
 /** Fresh schema, demo data and one paired till for every test file. */
-export async function setup(): Promise<Ctx> {
+export async function setup(opts: Parameters<typeof buildApp>[1] = {}): Promise<Ctx> {
   const db = createPool(TEST_DB);
   await db.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   await migrate(db);
   const data = await seed(db);
-  const app = await buildApp(db);
+  const app = await buildApp(db, opts);
   const code = await createPairingCode(db, data.registerId);
   const res = await app.inject({
     method: "POST",

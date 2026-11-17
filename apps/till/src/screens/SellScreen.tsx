@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { ManagerPin } from "../components/ManagerPin.js";
+import { StrandedCards } from "../components/StrandedCards.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
 import { addItem, cartTotals, emptyCart, needsManager, removeLine, updateLine, type Cart, type SellableItem } from "../lib/cart.js";
@@ -208,6 +209,7 @@ export function SellScreen({ setup, user }: Props) {
   return (
     <div className="sell">
       <h1 className="sr-only">{t("Sell")}</h1>
+      <StrandedCards userId={user.id} />
       <section className="catalog" aria-label={t("Products")}>
         <div className="searchrow">
           <div className="searchbox">

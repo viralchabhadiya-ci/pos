@@ -89,6 +89,37 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 
 Every change is written to the audit log with who made it.
 
+### Card terminal
+
+Link a card terminal to a register in the back office (Tills & devices → Card terminals). The till's
+**Card** button then sends the amount to the terminal, so the cashier never types it; **Card (manual
+terminal)** stays for a separate machine confirmed by hand. A card payment needs the internet, through
+the hub or direct; the hub never queues one.
+
+- **Never charged twice.** The till makes the payment id and saves it before sending. If the answer is
+  lost the payment shows *No answer* and is checked again by the same id, never re-sent as a new charge.
+- **Cancel on terminal** stops a payment still waiting. If the customer already paid, the answer is
+  Approved and the payment is kept.
+- **Refunds** of a sale paid on the terminal go back to the same card, never more than was paid.
+- **Charged but no sale** (the till closed while the customer paid): a banner on the till offers
+  *Refund to card*, or *Already sorted* with a manager PIN, which the server records.
+- **Reconciliation:** the back office lists every card payment with card, auth code and bill.
+  *Needs a look* shows charges older than 10 minutes that are on no bill and were not refunded or
+  sorted, and payments that never got an answer.
+
+Only the **simulator** provider is built in, for testing and demos; real providers (Network
+International, Magnati, Geidea and others) are added as adapters in `apps/api/src/payments` once a
+merchant agreement gives API access. The simulator waits `CARD_SIMULATOR_DELAY_MS` (default 3000) as
+if the customer were tapping, and picks the outcome from the amount's last two fils digits:
+
+| Amount ends in | Outcome |
+| --- | --- |
+| `.13` | Declined, insufficient funds |
+| `.14` | Slow customer (4 times the wait), useful to try Cancel |
+| `.15` | The start request is lost, then the check finds it approved |
+| `.16` | The first two status checks fail, then approved |
+| anything else | Approved |
+
 ### With a store hub
 
 ```bash
@@ -143,6 +174,6 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Integrated card terminal, super admin (businesses, subscriptions,
+Real card terminal providers, super admin (businesses, subscriptions,
 support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing,
 Windows/Android packaging. See the roadmap in the PRD.
