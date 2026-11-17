@@ -24,6 +24,13 @@ export async function pairingRoutes(app: FastifyInstance) {
       );
       const pairing = rows[0];
       if (!pairing) throw new HttpError(400, "invalid_code", "Pairing code is wrong or expired");
+      const account = await tx.query(
+        `SELECT t.status FROM registers r JOIN stores s ON s.id = r.store_id JOIN tenants t ON t.id = s.tenant_id WHERE r.id = $1`,
+        [pairing.register_id],
+      );
+      if (account.rows[0]?.status === "suspended" || account.rows[0]?.status === "cancelled") {
+        throw new HttpError(403, "account_paused", "This business account is paused, so new devices cannot be added. Contact support.");
+      }
       await tx.query("UPDATE pairing_codes SET used_at = now() WHERE code = $1", [body.code]);
       await tx.query(
         "INSERT INTO devices (id, register_id, name, role, token_hash) VALUES ($1, $2, $3, $4, $5)",

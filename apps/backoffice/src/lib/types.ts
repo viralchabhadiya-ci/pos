@@ -2,6 +2,18 @@ export interface Me {
   user: { id: string; name: string; role: "owner" | "manager" };
   tenant: { id: string; name: string; currency: string };
   stores: { id: string; name: string; code: string; timezone: string }[];
+  account: {
+    status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+    trialEndsAt: string | null;
+    planId: string;
+    planName: string;
+    maxStores: number | null;
+    maxRegisters: number | null;
+    stores: number;
+    registers: number;
+  };
+  /** Set while platform support is signed in to help. */
+  support: { by: string; reason: string; endsAt: string } | null;
 }
 
 export type TaxKind = "standard" | "zero" | "exempt";

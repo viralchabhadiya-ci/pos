@@ -89,6 +89,52 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 
 Every change is written to the audit log with who made it.
 
+### New businesses and plans
+
+- **Sign-up:** *Start a free trial* on the back office sign-in page (`#/signup`). One form creates the
+  business with:
+  - a 14-day trial on the Growth plan;
+  - one store with register *Counter 1*, its receipt code taken from the emirate (e.g. `SHJ1`);
+  - UAE VAT rates (standard, zero rated, exempt) and Cash, Card and Card (manual terminal);
+  - the owner, with a password for the back office and a PIN for the till;
+  - the categories of the chosen kind of shop (grocery, fashion, electronics, cosmetics, pharmacy,
+    other), with sample products if wanted (no barcodes, so they never clash with real ones).
+
+  It signs the owner straight in. A network can sign up at most 5 times an hour.
+- **Plans:** Starter (1 store, 2 registers), Growth (3 stores, 10 registers) and Pro (no limits).
+  - Adding a store or register beyond the plan is refused, with a message to move up.
+  - Settings shows the plan, its status and usage, and **Add store**.
+  - The back office shows a banner in the last week of a trial, or when a payment is overdue.
+  - There is no online payment yet; plans are changed from the platform console.
+
+### Platform console
+
+The operator's own console, at `#/platform` on the back office address. It has its own staff and
+sign-in, separate from every business. Create the first admin with:
+
+```bash
+pnpm --filter @pos/api platform-admin you@company.ae "Your Name"   # prints a password
+```
+
+The demo seed also creates `admin@platform.test` / `demo1234demo`.
+
+- **Overview:** monthly revenue, trials, sign-ups, tills online, sales in the last 24 hours, and
+  system health. Health covers database latency, card payments without an answer, stuck or failed
+  e-invoices, and bills with a total mismatch.
+- **Businesses:** search by name or owner email and filter by status. Each business shows its plan,
+  stores and tills, owners, sales, notes and a history of everything staff changed.
+- **Plan and status** (admins only). Support staff can only extend a trial and keep notes.
+  - *Paused* or *Closed* signs the business out of the back office and stops new devices from
+    pairing.
+  - Tills already paired keep selling and syncing, so no sale is ever lost.
+- **Sign in to help:** opens the business's back office as its owner for 60 minutes, in a new tab,
+  with a reason.
+  - The business sees a banner while it lasts.
+  - It also sees `support.sign_in` and every change marked with the support person in its own
+    audit log.
+- **Plans** (edit price and limits) and **Team** (admins and support staff; switching someone off
+  signs them out at once).
+
 ### Card terminal
 
 Link a card terminal to a register in the back office (Tills & devices → Card terminals). The till's
@@ -174,6 +220,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Real card terminal providers, super admin (businesses, subscriptions,
-support), loyalty and gift cards, owner app, purchasing, FTA e-invoicing,
+Real card terminal providers, online subscription billing, loyalty and gift cards, owner app, purchasing,
 Windows/Android packaging. See the roadmap in the PRD.

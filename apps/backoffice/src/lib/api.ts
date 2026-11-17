@@ -34,11 +34,12 @@ export const whenSignedOut = (fn: () => void) => {
   onSignedOut = fn;
 };
 
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const token = getToken();
+type Init = { method?: string; body?: unknown };
+
+async function call<T>(url: string, token: string | null, init: Init, onUnauthorized?: () => void): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}/admin${path}`, {
+    res = await fetch(url, {
       method: init.method ?? (init.body ? "POST" : "GET"),
       headers: {
         ...(init.body ? { "content-type": "application/json" } : {}),
@@ -53,13 +54,55 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) {
-    if (res.status === 401 && path !== "/login") {
-      setToken(null);
-      onSignedOut();
-    }
-    throw new ApiError(res.status, data.error ?? "error", data.message ?? "Something went wrong");
+    if (res.status === 401) onUnauthorized?.();
+    const issue = data.error === "validation" ? data.issues?.[0] : null;
+    throw new ApiError(res.status, data.error ?? "error", issue?.message ?? data.message ?? "Something went wrong");
   }
   return data as T;
+}
+
+/** The back office API (/admin), signed in as an owner or manager. */
+export async function api<T>(path: string, init: Init = {}): Promise<T> {
+  return call<T>(`${BASE}/admin${path}`, getToken(), init, () => {
+    if (path === "/login") return;
+    setToken(null);
+    onSignedOut();
+  });
+}
+
+/** Calls that need no sign-in, such as creating a new business. */
+export async function publicApi<T>(path: string, init: Init = {}): Promise<T> {
+  return call<T>(`${BASE}${path}`, null, init);
+}
+
+const PLATFORM_KEY = "pf.token";
+export function getPlatformToken(): string | null {
+  try {
+    return localStorage.getItem(PLATFORM_KEY);
+  } catch {
+    return null;
+  }
+}
+export function setPlatformToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(PLATFORM_KEY, token);
+    else localStorage.removeItem(PLATFORM_KEY);
+  } catch {
+    // See setToken.
+  }
+}
+let onPlatformSignedOut: () => void = () => {};
+export const whenPlatformSignedOut = (fn: () => void) => {
+  onPlatformSignedOut = fn;
+};
+
+/** The platform console API (/platform), for the operator's own staff. */
+export async function platformApi<T>(path: string, init: Init = {}): Promise<T> {
+  return call<T>(`${BASE}/platform${path}`, getPlatformToken(), init, () => {
+    if (path === "/login") return;
+    setPlatformToken(null);
+    onPlatformSignedOut();
+  });
 }
 
 export const errorText = (err: unknown) => (err instanceof Error ? err.message : "Something went wrong");
