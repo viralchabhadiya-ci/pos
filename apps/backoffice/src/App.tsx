@@ -7,6 +7,7 @@ import { Audit } from "./pages/Audit.js";
 import { Categories } from "./pages/Categories.js";
 import { Customers } from "./pages/Customers.js";
 import { Dashboard } from "./pages/Dashboard.js";
+import { EInvoicing } from "./pages/EInvoicing.js";
 import { Devices } from "./pages/Devices.js";
 import { Login } from "./pages/Login.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
@@ -20,6 +21,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
   { path: "sales", label: "Sales", icon: "receipt" },
   { path: "reports", label: "Reports", icon: "chart" },
+  { path: "einvoicing", label: "E-invoicing", icon: "send" },
   { path: "products", label: "Products", icon: "box" },
   { path: "categories", label: "Categories", icon: "tag" },
   { path: "customers", label: "Customers", icon: "user" },
@@ -91,6 +93,8 @@ export function App() {
         return route[1] ? <OrderDetail id={route[1]} /> : <Sales />;
       case "reports":
         return <Reports />;
+      case "einvoicing":
+        return <EInvoicing me={me} tab={route[1]} />;
       case "products":
         // Keyed so the dashboard's "low stock" link resets the filter.
         return <Products key={route[1] ?? ""} me={me} initialStatus={route[1]} />;

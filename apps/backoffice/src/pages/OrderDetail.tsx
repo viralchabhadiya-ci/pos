@@ -1,3 +1,4 @@
+import { EInvoicePanel } from "../components/EInvoicePanel.js";
 import { Icon } from "../components/Icon.js";
 import { ErrorState, SkeletonRows } from "../components/States.js";
 import { api } from "../lib/api.js";
@@ -171,6 +172,8 @@ export function OrderDetail({ id }: { id: string }) {
               </p>
             )}
           </section>
+
+          <EInvoicePanel orderId={b.id} number={b.number} />
         </>
       )}
     </div>
