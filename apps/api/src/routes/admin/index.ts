@@ -3,6 +3,7 @@ import { authRoutes } from "./auth.js";
 import { businessRoutes } from "./business.js";
 import { catalogRoutes } from "./catalog.js";
 import { deviceRoutes } from "./devices.js";
+import { einvoicingRoutes } from "./einvoicing.js";
 import { productCsvRoutes } from "./products-csv.js";
 import { adminReportRoutes } from "./reports.js";
 import { salesRoutes } from "./sales.js";
@@ -18,4 +19,5 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(salesRoutes);
   await app.register(adminReportRoutes);
   await app.register(businessRoutes);
+  await app.register(einvoicingRoutes);
 }

@@ -1,0 +1,31 @@
+/* E-invoicing: status on the bill and the send queue. */
+.badge.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.notice.bad { background: var(--bad-soft); color: var(--fg); }
+.notice.bad > .icon { color: var(--bad); }
+.einv-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.einv-head h2 { margin: 0; }
+.einv-facts { display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-4) 0 0; }
+.einv-facts dt { color: var(--muted); }
+.einv-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.einv-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.einv-error { margin: var(--space-4) 0 0; }
+.attempts { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-2); font-size: var(--text-sm); }
+.attempts li { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--space-3); align-items: start; }
+.attempts .icon { margin-top: 2px; }
+.attempts .ok { color: var(--good); }
+.attempts .no { color: var(--bad); }
+.attempts .later { color: var(--warn); }
+details.einv-history { margin-top: var(--space-4); }
+details.einv-history summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; color: var(--accent); }
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.stat-btn {
+  display: grid; gap: 2px; text-align: left; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; box-shadow: var(--shadow-1); min-height: var(--tap);
+}
+.stat-btn:hover { background: var(--surface-2); }
+.stat-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.stat-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.stat-btn strong { font-size: var(--text-xl); font-variant-numeric: tabular-nums; }
+.stat-btn.bad strong { color: var(--bad); }
+.stat-btn.good strong { color: var(--good); }
+.stat-btn.warn strong { color: var(--warn); }
