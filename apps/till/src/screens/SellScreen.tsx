@@ -8,6 +8,7 @@ import { addItem, cartTotals, emptyCart, needsManager, removeLine, updateLine, t
 import { db, type DeviceSetup, type LocalOrder, type ParkedSale, type Session, type User } from "../lib/db.js";
 import { publishDisplay, receiptUrl } from "../lib/display.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
+import { itemCount, t } from "../lib/i18n.js";
 import { useScanner } from "../lib/useScanner.js";
 import { PaymentDialog } from "./PaymentDialog.js";
 import { ReceiptView } from "./ReceiptView.js";
@@ -119,7 +120,7 @@ export function SellScreen({ setup, user }: Props) {
     await db.parked.put({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), cashierName: user.name, cart, total: totals.total });
     setCart(emptyCart());
     setSelected(null);
-    setNotice("Sale parked. Open Parked to continue it.");
+    setNotice(t("Sale parked. Open Parked to continue it."));
   };
 
   const resume = async (p: ParkedSale) => {
@@ -130,7 +131,7 @@ export function SellScreen({ setup, user }: Props) {
   };
 
   const add = (item: SellableItem, qty = 1) => {
-    if (isRefund) return setNotice("Finish or clear the refund before adding items");
+    if (isRefund) return setNotice(t("Finish or clear the refund before adding items"));
     if (item.uom === "kg" && qty === 1) return setWeighing(item);
     const next = addItem(cart, item, qty);
     setCart(next);
@@ -141,7 +142,7 @@ export function SellScreen({ setup, user }: Props) {
   const scan = (code: string) => {
     const hit = items?.find((i) => i.barcode === code || i.extraBarcodes.includes(code) || i.sku === code);
     if (hit) add(hit);
-    else setNotice(`No product with barcode ${code}`);
+    else setNotice(t("No product with barcode {code}", { code }));
   };
   useScanner(scan);
 
@@ -169,7 +170,7 @@ export function SellScreen({ setup, user }: Props) {
       setEntry("");
     };
     if (needsManager(patch, selectedLine)) {
-      setApproval({ reason: mode === "price" ? "Change the price" : "Discount above 10%", apply });
+      setApproval({ reason: mode === "price" ? t("Change the price") : t("Discount above 10%"), apply });
     } else apply();
   };
 
@@ -192,7 +193,7 @@ export function SellScreen({ setup, user }: Props) {
   const clear = () => {
     if (cart.lines.length && !isRefund) {
       setApproval({
-        reason: "Void this sale",
+        reason: t("Void this sale"),
         apply: () => {
           setCart(emptyCart());
           setSelected(null);
@@ -206,18 +207,18 @@ export function SellScreen({ setup, user }: Props) {
 
   return (
     <div className="sell">
-      <h1 className="sr-only">Sell</h1>
-      <section className="catalog" aria-label="Products">
+      <h1 className="sr-only">{t("Sell")}</h1>
+      <section className="catalog" aria-label={t("Products")}>
         <div className="searchrow">
           <div className="searchbox">
             <label htmlFor="search" className="sr-only">
-              Search products or scan a barcode
+              {t("Search products or scan a barcode")}
             </label>
             <Icon name="search" />
             <input
             id="search"
             type="search"
-            placeholder="Search name or scan barcode"
+            placeholder={t("Search name or scan barcode")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -236,17 +237,17 @@ export function SellScreen({ setup, user }: Props) {
           {parkedCount > 0 && (
             <button type="button" className="btn outline" onClick={() => setShowParked(true)}>
               <Icon name="pause" />
-              Parked <span className="count">{parkedCount}</span>
+              {t("Parked")} <span className="count">{parkedCount}</span>
             </button>
           )}
           <button type="button" className="btn outline" onClick={() => setRefunding(true)}>
             <Icon name="refund" />
-            Refund
+            {t("Refund")}
           </button>
         </div>
-        <nav className="cats" aria-label="Categories">
+        <nav className="cats" aria-label={t("Categories")}>
           <button type="button" className={categoryId === null ? "chip on" : "chip"} aria-pressed={categoryId === null} onClick={() => setCategoryId(null)}>
-            All
+            {t("All")}
           </button>
           {categories.map((c) => (
             <button key={c.id} type="button" className={categoryId === c.id ? "chip on" : "chip"} aria-pressed={categoryId === c.id} onClick={() => setCategoryId(c.id)}>
@@ -264,14 +265,16 @@ export function SellScreen({ setup, user }: Props) {
                 </span>
               )}
               <span className="price">
-                {money(i.price)}
-                {i.uom === "kg" && <span className="unit"> / kg</span>}
+                <bdi>
+                  {money(i.price)}
+                  {i.uom === "kg" && <span className="unit"> / kg</span>}
+                </bdi>
               </span>
             </button>
           ))}
           {items && visible.length === 0 && (
             <div className="no-results">
-              <p>No products match “{search || categories.find((c) => c.id === categoryId)?.name}”.</p>
+              <p>{t("No products match “{q}”.", { q: search || categories.find((c) => c.id === categoryId)?.name || "" })}</p>
               <button
                 type="button"
                 className="btn outline"
@@ -280,19 +283,17 @@ export function SellScreen({ setup, user }: Props) {
                   setCategoryId(null);
                 }}
               >
-                Show all products
+                {t("Show all products")}
               </button>
             </div>
           )}
         </div>
       </section>
 
-      <section className="cart" aria-label="Current sale">
+      <section className="cart" aria-label={t("Current sale")}>
         <div className={isRefund ? "cart-head refund" : "cart-head"}>
-          <h2>{isRefund ? "Refund" : "Current sale"}</h2>
-          <span className="badge">
-            {cart.lines.length} {cart.lines.length === 1 ? "item" : "items"}
-          </span>
+          <h2>{isRefund ? t("Refund") : t("Current sale")}</h2>
+          <span className="badge">{itemCount(cart.lines.length)}</span>
         </div>
         <ol className="lines">
           {cart.lines.map((l, idx) => (
@@ -302,8 +303,10 @@ export function SellScreen({ setup, user }: Props) {
                 <span className="desc">
                   {l.name}
                   <small className="muted">
-                    {qtyText(l.qty, l.uom)} × {money(l.unitPrice)}
-                    {l.discountBp ? ` · ${(l.discountBp / 100).toFixed(2)}% off` : ""}
+                    <bdi>
+                      {qtyText(l.qty, l.uom)} × {money(l.unitPrice)}
+                    </bdi>
+                    {l.discountBp ? ` · ${t("{pct}% off", { pct: (l.discountBp / 100).toFixed(2) })}` : ""}
                   </small>
                   {l.note && <small className="muted note">“{l.note}”</small>}
                 </span>
@@ -314,35 +317,38 @@ export function SellScreen({ setup, user }: Props) {
           {cart.lines.length === 0 && (
             <li className="empty">
               <Icon name="search" size={32} />
-              Scan a barcode or tap a product to start.
+              {t("Scan a barcode or tap a product to start.")}
             </li>
           )}
         </ol>
 
         <div className="totals">
           <div>
-            <span>Subtotal (excl. VAT)</span>
+            <span>{t("Subtotal (excl. VAT)")}</span>
             <span>{money(totals.subtotalNet)}</span>
           </div>
           {totals.discountTotal !== 0 && (
             <div>
-              <span>Discounts</span>
+              <span>{t("Discounts")}</span>
               <span>-{money(totals.discountTotal)}</span>
             </div>
           )}
           <div>
-            <span>VAT</span>
+            <span>{t("VAT")}</span>
             <span>{money(totals.taxTotal)}</span>
           </div>
           <div className="grand">
-            <span>Total</span>
+            <span>{t("Total")}</span>
             <span>{aed(totals.total)}</span>
           </div>
         </div>
 
         <div className="padarea">
           <div className={entry ? "entry typing" : "entry"} aria-live="polite">
-            {entry || (selectedLine ? `Edit ${MODE_LABEL[mode].toLowerCase()} of line ${cart.lines.indexOf(selectedLine) + 1}` : "Select a line to change it")}
+            {entry ||
+              (selectedLine
+                ? t("Edit {mode} of line {n}", { mode: t(MODE_LABEL[mode]).toLowerCase(), n: cart.lines.indexOf(selectedLine) + 1 })
+                : t("Select a line to change it"))}
           </div>
           <div className="numpad">
             {["7", "8", "9", "back", "4", "5", "6", "1", "2", "3", ".", "0"].map((k) => (
@@ -352,13 +358,13 @@ export function SellScreen({ setup, user }: Props) {
                 className={k === "0" ? "key zero" : k === "back" ? "key subtle" : "key"}
                 style={{ gridArea: k === "back" ? "bk" : k === "." ? "dot" : `k${k}` }}
                 onClick={() => pad(k)}
-                aria-label={k === "back" ? "Delete last digit" : undefined}
+                aria-label={k === "back" ? t("Delete last digit") : undefined}
               >
                 {k === "back" ? <Icon name="backspace" /> : k}
               </button>
             ))}
             <button type="button" className="key primary apply" style={{ gridArea: "ap" }} onClick={() => pad("enter")} disabled={!selectedLine || !entry}>
-              Apply
+              {t("Apply")}
             </button>
             {(["qty", "disc", "price"] as PadMode[]).map((m) => (
               <button
@@ -369,7 +375,7 @@ export function SellScreen({ setup, user }: Props) {
                 aria-pressed={mode === m}
                 onClick={() => setMode(m)}
               >
-                {MODE_LABEL[m]}
+                {t(MODE_LABEL[m])}
               </button>
             ))}
             <button
@@ -377,7 +383,7 @@ export function SellScreen({ setup, user }: Props) {
               className="mode danger"
               style={{ gridArea: "del" }}
               disabled={!selectedLine}
-              aria-label="Delete selected line"
+              aria-label={t("Delete selected line")}
               onClick={() => {
                 if (!selectedLine) return;
                 setCart(removeLine(cart, selectedLine.id));
@@ -389,22 +395,22 @@ export function SellScreen({ setup, user }: Props) {
           </div>
           <div className="actions">
             <button type="button" className="btn ghost" onClick={clear} disabled={!cart.lines.length}>
-              Clear
+              {t("Clear")}
             </button>
             {!isRefund && (
               <>
                 <button type="button" className="btn ghost" onClick={() => setNoting(true)} disabled={!selectedLine}>
                   <Icon name="note" size={18} />
-                  Note
+                  {t("Note")}
                 </button>
                 <button type="button" className="btn ghost" onClick={() => void park()} disabled={!cart.lines.length}>
                   <Icon name="pause" size={18} />
-                  Park
+                  {t("Park")}
                 </button>
               </>
             )}
             <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={() => setPaying(true)}>
-              <span>{isRefund ? "Refund" : "Pay"}</span>
+              <span>{isRefund ? t("Refund") : t("Pay")}</span>
               <span>{aed(totals.total)}</span>
             </button>
           </div>
@@ -493,24 +499,24 @@ export function SellScreen({ setup, user }: Props) {
 function NoteDialog({ line, initial, onSave, onCancel }: { line: string; initial: string; onSave: (note: string) => void; onCancel: () => void }) {
   const [note, setNote] = useState(initial);
   return (
-    <Modal onClose={onCancel} label={`Note for ${line}`}>
-      <h2>Note for {line}</h2>
+    <Modal onClose={onCancel} label={t("Note for {line}", { line })}>
+      <h2>{t("Note for {line}", { line })}</h2>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           onSave(note.trim());
         }}
       >
-        <label htmlFor="line-note">Note (prints on the receipt)</label>
-        <input id="line-note" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="e.g. gift wrap, size swap" autoFocus />
+        <label htmlFor="line-note">{t("Note (prints on the receipt)")}</label>
+        <input id="line-note" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder={t("e.g. gift wrap, size swap")} autoFocus />
         <div className="actions">
           {initial && (
             <button type="button" className="btn ghost danger" onClick={() => onSave("")}>
-              Remove note
+              {t("Remove note")}
             </button>
           )}
           <button type="submit" className="btn primary">
-            Save note
+            {t("Save note")}
           </button>
         </div>
       </form>
@@ -538,16 +544,16 @@ function ParkedDialog({
     if (loaded && loaded.length === 0) onClose();
   }, [loaded, onClose]);
   return (
-    <Modal onClose={onClose} label="Parked sales" wide>
-      <h2>Parked sales</h2>
-      {busy && <p className="muted">Park or clear the current sale before you continue another one.</p>}
+    <Modal onClose={onClose} label={t("Parked sales")} wide>
+      <h2>{t("Parked sales")}</h2>
+      {busy && <p className="muted">{t("Park or clear the current sale before you continue another one.")}</p>}
       <ul className="parked">
         {parked.map((p) => (
           <li key={p.id}>
             <span className="desc">
               <strong>{aed(p.total)}</strong>
               <small className="muted">
-                {p.cart.lines.length} {p.cart.lines.length === 1 ? "item" : "items"} · {p.cashierName} ·{" "}
+                {itemCount(p.cart.lines.length)} · {p.cashierName} ·{" "}
                 {new Date(p.createdAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
               </small>
               <small className="muted">{p.cart.lines.slice(0, 3).map((l) => l.name).join(", ")}{p.cart.lines.length > 3 ? "…" : ""}</small>
@@ -555,19 +561,19 @@ function ParkedDialog({
             {confirm === p.id ? (
               <>
                 <button type="button" className="btn ghost" onClick={() => setConfirm(null)}>
-                  Keep
+                  {t("Keep")}
                 </button>
                 <button type="button" className="btn outline danger" onClick={() => onDiscard(p)}>
-                  Yes, discard
+                  {t("Yes, discard")}
                 </button>
               </>
             ) : (
               <>
                 <button type="button" className="btn ghost danger" onClick={() => setConfirm(p.id)}>
-                  Discard
+                  {t("Discard")}
                 </button>
                 <button type="button" className="btn primary" disabled={busy} onClick={() => onResume(p)}>
-                  Continue
+                  {t("Continue")}
                 </button>
               </>
             )}
@@ -583,10 +589,10 @@ function WeighDialog({ item, onWeight, onCancel }: { item: SellableItem; onWeigh
   const [kg, setKg] = useState("");
   const value = Number(kg);
   return (
-    <Modal onClose={onCancel} label={`Weigh ${item.name}`}>
+    <Modal onClose={onCancel} label={t("Weigh {name}", { name: item.name })}>
       <h2>{item.name}</h2>
-      <p className="muted">AED {money(item.price)} per kg</p>
-      <label htmlFor="kg">Weight (kg)</label>
+      <p className="muted">{t("AED {price} per kg", { price: money(item.price) })}</p>
+      <label htmlFor="kg">{t("Weight (kg)")}</label>
       <input
         id="kg"
         inputMode="decimal"
@@ -596,9 +602,9 @@ function WeighDialog({ item, onWeight, onCancel }: { item: SellableItem; onWeigh
         placeholder="0.000"
         autoFocus
       />
-      <p className="muted" aria-live="polite">{value > 0 ? `Price: ${aed(Math.round(item.price * value))}` : "Put the item on the scale or type its weight."}</p>
+      <p className="muted" aria-live="polite">{value > 0 ? t("Price: {price}", { price: aed(Math.round(item.price * value)) }) : t("Put the item on the scale or type its weight.")}</p>
       <button type="button" className="btn primary block" disabled={!(value > 0)} onClick={() => onWeight(value)}>
-        Add
+        {t("Add")}
       </button>
     </Modal>
   );

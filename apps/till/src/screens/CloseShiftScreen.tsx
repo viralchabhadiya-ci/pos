@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { DeviceSetup, Session, User } from "../lib/db.js";
 import { aed, tryParseMoney } from "../lib/format.js";
+import { t } from "../lib/i18n.js";
 import { printOnHub, shiftReportDoc } from "../lib/print.js";
 import { closeSession, shiftSummary, type ShiftSummary } from "../lib/till.js";
 import { useSyncStatus } from "../lib/useSync.js";
@@ -55,48 +56,48 @@ export function CloseShiftScreen({
   return (
     <main className="center">
       <div className="card">
-        <h1>Close shift {session.seq}</h1>
+        <h1>{t("Close shift {n}", { n: session.seq })}</h1>
         {submitted === null ? (
           <form onSubmit={count}>
-            <p className="muted">Count all cash in the drawer and enter the total.</p>
-            <label htmlFor="counted">Cash counted (AED)</label>
+            <p className="muted">{t("Count all cash in the drawer and enter the total.")}</p>
+            <label htmlFor="counted">{t("Cash counted (AED)")}</label>
             <input id="counted" inputMode="decimal" value={counted} onChange={(e) => setCounted(e.target.value)} autoFocus />
             <div className="actions">
               <button type="button" className="btn ghost" onClick={onCancel}>
-                Back to selling
+                {t("Back to selling")}
               </button>
-              <button className="btn primary">Next</button>
+              <button className="btn primary">{t("Next")}</button>
             </div>
           </form>
         ) : (
           <>
             <table className="summary">
               <tbody>
-                <tr><td>Orders</td><td>{summary.orderCount}</td></tr>
-                <tr><td>Sales total</td><td>{aed(summary.total)}</td></tr>
-                <tr><td>VAT</td><td>{aed(summary.taxTotal)}</td></tr>
+                <tr><td>{t("Orders")}</td><td>{summary.orderCount}</td></tr>
+                <tr><td>{t("Sales total")}</td><td>{aed(summary.total)}</td></tr>
+                <tr><td>{t("VAT")}</td><td>{aed(summary.taxTotal)}</td></tr>
                 {Object.entries(summary.byKind).map(([k, v]) => (
-                  <tr key={k}><td>Paid by {k.replace("_", " ")}</td><td>{aed(v)}</td></tr>
+                  <tr key={k}><td>{t(`Paid by ${k.replace("_", " ")}`)}</td><td>{aed(v)}</td></tr>
                 ))}
-                <tr><td>Opening cash</td><td>{aed(summary.openingCash)}</td></tr>
-                <tr><td>Cash in / out</td><td>{aed(summary.cashIn)} / {aed(summary.cashOut)}</td></tr>
-                <tr className="strong"><td>Expected cash</td><td>{aed(summary.expectedCash)}</td></tr>
-                <tr className="strong"><td>Counted</td><td>{aed(submitted)}</td></tr>
-                <tr className={diff === 0 ? "good" : "bad"}><td>Difference</td><td>{aed(diff ?? 0)}</td></tr>
+                <tr><td>{t("Opening cash")}</td><td>{aed(summary.openingCash)}</td></tr>
+                <tr><td>{t("Cash in / out")}</td><td>{aed(summary.cashIn)} / {aed(summary.cashOut)}</td></tr>
+                <tr className="strong"><td>{t("Expected cash")}</td><td>{aed(summary.expectedCash)}</td></tr>
+                <tr className="strong"><td>{t("Counted")}</td><td>{aed(submitted)}</td></tr>
+                <tr className={diff === 0 ? "good" : "bad"}><td>{t("Difference")}</td><td>{aed(diff ?? 0)}</td></tr>
               </tbody>
             </table>
             {diff !== 0 && (
               <>
-                <label htmlFor="note">Reason for the difference</label>
+                <label htmlFor="note">{t("Reason for the difference")}</label>
                 <input id="note" value={note} onChange={(e) => setNote(e.target.value)} />
               </>
             )}
             <div className="actions">
               <button type="button" className="btn ghost" onClick={() => setSubmitted(null)}>
-                Recount
+                {t("Recount")}
               </button>
               <button type="button" className="btn primary" onClick={confirm} disabled={diff !== 0 && !note.trim()}>
-                Close shift
+                {t("Close shift")}
               </button>
             </div>
           </>

@@ -6,6 +6,7 @@ import { db } from "../lib/db.js";
 import { money } from "../lib/format.js";
 import { findSale } from "../lib/till.js";
 import { Icon } from "../components/Icon.js";
+import { t } from "../lib/i18n.js";
 
 interface SoldLine {
   variantId: string;
@@ -30,7 +31,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
     e.preventDefault();
     setError(null);
     const hit = await findSale(number);
-    if (!hit) return setError("No sale found with that receipt number");
+    if (!hit) return setError(t("No sale found with that receipt number"));
     if ("remote" in hit) {
       try {
         const full = await request<{
@@ -49,7 +50,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         setSale({ id: full.id, number: full.number, lines });
         setPicked(Object.fromEntries(lines.map((l, i) => [i, l.qty])));
       } catch {
-        setError("This sale is from another till; connect to the internet to refund it");
+        setError(t("This sale is from another till; connect to the internet to refund it"));
       }
       return;
     }
@@ -69,16 +70,16 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         const uom = (v && products.get(v.productId)?.uom) ?? "unit";
         return { id: crypto.randomUUID(), variantId: l.variantId, name: l.name, unitPrice: l.unitPrice, qty: -qty, discountBp: l.discountBp, taxId: l.taxId, uom };
       });
-    if (!lines.length) return setError("Pick at least one item to return");
+    if (!lines.length) return setError(t("Pick at least one item to return"));
     onStart({ ...emptyCart(), lines, refundOfOrderId: sale.id });
   };
 
   return (
-    <Modal onClose={onCancel} wide label="Refund">
-      <h2>Refund</h2>
+    <Modal onClose={onCancel} wide label={t("Refund")}>
+      <h2>{t("Refund")}</h2>
       {!sale ? (
         <form onSubmit={lookup}>
-          <label htmlFor="rnum">Receipt number</label>
+          <label htmlFor="rnum">{t("Receipt number")}</label>
           <input id="rnum" value={number} onChange={(e) => setNumber(e.target.value.toUpperCase())} placeholder="DXB1-R1-0001-0001" autoFocus />
           {error && (
           <p className="error" role="alert">
@@ -88,23 +89,23 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         )}
           <div className="actions">
             <button type="button" className="btn ghost" onClick={onCancel}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button className="btn primary" disabled={!number.trim()}>
-              Find sale
+              {t("Find sale")}
             </button>
           </div>
         </form>
       ) : (
         <>
-          <p className="muted">Sale {sale.number}. Choose how many of each item come back.</p>
+          <p className="muted">{t("Sale {number}. Choose how many of each item come back.", { number: sale.number })}</p>
           <table className="refund-table">
             <thead>
               <tr>
-                <th>Item</th>
-                <th style={{ textAlign: "right" }}>Sold</th>
-                <th style={{ textAlign: "right" }}>Price</th>
-                <th style={{ textAlign: "right" }}>Return</th>
+                <th>{t("Item")}</th>
+                <th className="num">{t("Sold")}</th>
+                <th className="num">{t("Price")}</th>
+                <th className="num">{t("Return")}</th>
               </tr>
             </thead>
             <tbody>
@@ -115,7 +116,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
                   <td className="num">{money(l.unitPrice)}</td>
                   <td className="num">
                     <input
-                      aria-label={`Return quantity for ${l.name}`}
+                      aria-label={t("Return quantity for {name}", { name: l.name })}
                       inputMode="decimal"
                       value={picked[i] ?? 0}
                       onChange={(e) => setPicked({ ...picked, [i]: Math.min(l.qty, Math.max(0, Number(e.target.value) || 0)) })}
@@ -133,10 +134,10 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         )}
           <div className="actions">
             <button type="button" className="btn ghost" onClick={onCancel}>
-              Cancel
+              {t("Cancel")}
             </button>
             <button type="button" className="btn primary" onClick={start}>
-              Start refund
+              {t("Start refund")}
             </button>
           </div>
         </>

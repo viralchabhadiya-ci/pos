@@ -70,3 +70,30 @@ describe("notes, receipt QR and shift reports", () => {
     }
   });
 });
+
+describe("bilingual receipt", () => {
+  it("adds Arabic labels, the Arabic store name and Arabic item names", () => {
+    const doc = receiptDoc({ ...setup, store: { ...setup.store, nameAr: "ديمو ميني مارت" } }, order, {
+      cashierName: "Aisha",
+      methods: [{ id: "cash", name: "Cash" }],
+      lang: "bilingual",
+      arabicNames: new Map([["v1", "كوكا كولا"]]),
+    });
+    const text = doc.blocks
+      .map((b) => ("text" in b ? b.text : "left" in b ? `${b.left} ${b.right}` : ""))
+      .join("\n")
+      .replace(/[\u2068\u2069]/g, "");
+    expect(doc.blocks.some((b) => b.type === "row" && b.left === "Total AED / \u2068الإجمالي درهم\u2069" && b.bold)).toBe(true);
+    for (const want of ["ديمو ميني مارت", "فاتورة ضريبية", "TRN / الرقم الضريبي 100000000000003", "كوكا كولا", "Total AED / الإجمالي درهم", "Cash / نقدًا", "Change / الباقي"]) {
+      expect(text).toContain(want);
+    }
+    // Text-mode fallback still prints the English halves.
+    const bytes = Buffer.from(encodeReceipt(doc, { width: 48 })).toString("latin1");
+    expect(bytes).toContain("Total AED");
+  });
+
+  it("stays English-only by default", () => {
+    const doc = receiptDoc(setup, order, { cashierName: "Aisha", methods: [], arabicNames: new Map([["v1", "كوكا كولا"]]) });
+    expect(JSON.stringify(doc)).not.toMatch(/[؀-ۿ]/);
+  });
+});

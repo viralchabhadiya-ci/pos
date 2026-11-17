@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { StatusBar } from "./components/StatusBar.js";
 import { db, type DeviceSetup, type Session, type User } from "./lib/db.js";
+import { useLang } from "./lib/i18n.js";
 import { SETUP_CHANGED, startSync } from "./lib/sync.js";
 import { currentSession, getSetup } from "./lib/till.js";
 import { CloseShiftScreen } from "./screens/CloseShiftScreen.js";
@@ -13,6 +14,9 @@ import { SellScreen } from "./screens/SellScreen.js";
 
 /** Pair → PIN → open shift → sell → close shift. Every step works from local data. */
 export function App() {
+  // Every screen reads the language through t(); re-rendering from the root picks up a switch
+  // without losing the cart or any other state.
+  useLang();
   const [loaded, setLoaded] = useState(false);
   const [setup, setSetup] = useState<DeviceSetup | undefined>();
   const [user, setUser] = useState<User | undefined>();

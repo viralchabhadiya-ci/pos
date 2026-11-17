@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "../lib/i18n.js";
 import { Icon } from "./Icon.js";
 
 interface Props {
@@ -43,7 +44,7 @@ export function PinPad({ title, hint, error, busy, onSubmit, onCancel }: Props) 
       </span>
       <h2>{title}</h2>
       {hint && <p className="muted">{hint}</p>}
-      <div className="pin-dots" role="status" aria-label={`${pin.length} digits entered`}>
+      <div className="pin-dots" role="status" aria-label={t("{n} digits entered", { n: pin.length })}>
         {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
           <span key={i} className={i < pin.length ? "dot on" : "dot"} />
         ))}
@@ -62,15 +63,15 @@ export function PinPad({ title, hint, error, busy, onSubmit, onCancel }: Props) 
             className={k === "ok" ? "key primary" : k === "back" ? "key subtle" : "key"}
             onClick={() => press(k)}
             disabled={busy || (k === "ok" && pin.length < 4)}
-            aria-label={k === "back" ? "Delete last digit" : undefined}
+            aria-label={k === "back" ? t("Delete last digit") : undefined}
           >
-            {k === "back" ? <Icon name="backspace" /> : k === "ok" ? (busy ? "Checking…" : "OK") : k}
+            {k === "back" ? <Icon name="backspace" /> : k === "ok" ? (busy ? t("Checking…") : t("OK")) : k}
           </button>
         ))}
       </div>
       {onCancel && (
         <button type="button" className="link" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </button>
       )}
     </div>

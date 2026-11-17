@@ -277,6 +277,35 @@ describe("printer and cash drawer", () => {
     expect(includes(bytes, [0x1b, 0x70, 0, 25, 250])).toBe(true);
   });
 
+  it("prints raster images (Arabic) and refuses image data of the wrong size", async () => {
+    printed = [];
+    const data = Buffer.from([0xff, 0x00, 0x81, 0x7e]).toString("base64");
+    const ok = await hub.app.inject({
+      method: "POST",
+      url: "/hub/print",
+      headers: tillA,
+      payload: { doc: { blocks: [{ type: "image", width: 16, height: 2, data }], cut: false } },
+    });
+    expect(ok.statusCode).toBe(200);
+    await waitFor(() => printed.length === 1);
+    expect(includes(printed[0]!, [0x1d, 0x76, 0x30, 0, 2, 0, 2, 0, 0xff, 0x00, 0x81, 0x7e])).toBe(true);
+
+    const wrongSize = await hub.app.inject({
+      method: "POST",
+      url: "/hub/print",
+      headers: tillA,
+      payload: { doc: { blocks: [{ type: "image", width: 16, height: 3, data }] } },
+    });
+    expect(wrongSize.statusCode).toBe(400);
+    const oddWidth = await hub.app.inject({
+      method: "POST",
+      url: "/hub/print",
+      headers: tillA,
+      payload: { doc: { blocks: [{ type: "image", width: 12, height: 2, data }] } },
+    });
+    expect(oddWidth.statusCode).toBe(400);
+  });
+
   it("opens the drawer on its own, only for a known till", async () => {
     printed = [];
     const anon = await hub.app.inject({ method: "POST", url: "/hub/drawer" });

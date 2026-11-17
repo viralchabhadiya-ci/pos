@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { db } from "../lib/db.js";
+import { t } from "../lib/i18n.js";
 import { verifyPin } from "../lib/pin.js";
 import { Modal } from "./Modal.js";
 import { PinPad } from "./PinPad.js";
@@ -18,11 +19,11 @@ export function ManagerPin({ reason, onApprove, onCancel }: { reason: string; on
       }
     }
     setBusy(false);
-    setError("That PIN is not a manager PIN");
+    setError(t("That PIN is not a manager PIN"));
   };
   return (
     <Modal onClose={onCancel}>
-      <PinPad title="Manager approval" hint={reason} error={error} busy={busy} onSubmit={submit} onCancel={onCancel} />
+      <PinPad title={t("Manager approval")} hint={reason} error={error} busy={busy} onSubmit={submit} onCancel={onCancel} />
     </Modal>
   );
 }

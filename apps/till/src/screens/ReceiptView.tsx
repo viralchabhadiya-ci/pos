@@ -4,7 +4,8 @@ import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
 import { db, type DeviceSetup, type LocalOrder, type User } from "../lib/db.js";
 import { money, qtyText } from "../lib/format.js";
-import { needsDrawer, printOnHub, receiptDoc } from "../lib/print.js";
+import { t } from "../lib/i18n.js";
+import { getReceiptLang, needsDrawer, printOnHub, receiptDoc } from "../lib/print.js";
 import { useSyncStatus } from "../lib/useSync.js";
 
 /** Orders already sent to the printer, so a re-render (or React's dev double effect) never prints twice. */
@@ -35,17 +36,26 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
   const printHere = async (first: boolean) => {
     const methodRows = await db.paymentMethods.toArray();
     const originalNumber = order.refundOfOrderId ? (await db.orders.get(order.refundOfOrderId))?.number : undefined;
+    const lang = getReceiptLang();
+    const arabicNames = new Map<string, string | null>();
+    if (lang === "bilingual") {
+      const variants = await db.variants.bulkGet(order.lines.map((l) => l.variantId));
+      const products = await db.products.bulkGet(variants.map((v) => v?.productId ?? ""));
+      variants.forEach((v, i) => v && arabicNames.set(v.id, products[i]?.nameAr ?? null));
+    }
     const doc = receiptDoc(setup, order, {
       cashierName: cashier.name,
       methods: methodRows,
       originalNumber,
       openDrawer: first && needsDrawer(order),
+      lang,
+      arabicNames,
     });
     try {
       await printOnHub(doc);
       setPrintError(null);
     } catch (err) {
-      setPrintError(`Printer: ${(err as Error).message}`);
+      setPrintError(t("Printer: {msg}", { msg: (err as Error).message }));
     }
   };
 
@@ -57,25 +67,25 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
   }, [hubPrinter, order.id]);
 
   return (
-    <Modal onClose={onClose} label={refund ? "Refund complete" : "Sale complete"}>
+    <Modal onClose={onClose} label={refund ? t("Refund complete") : t("Sale complete")}>
       <div className="done-head noprint">
         <span className="tick" aria-hidden="true">
           <Icon name="check" size={24} />
         </span>
         <div>
-          <h2>{refund ? "Refund complete" : "Sale complete"}</h2>
+          <h2>{refund ? t("Refund complete") : t("Sale complete")}</h2>
           {order.payment.change > 0 ? (
             <p className="good" style={{ margin: 0, fontWeight: 700 }}>
-              Give change {money(order.payment.change)} AED
+              {t("Give change {amount} AED", { amount: money(order.payment.change) })}
             </p>
           ) : (
             <p className="muted" style={{ margin: 0 }}>
-              {hubPrinter ? "Receipt sent to the printer." : order.number}
+              {hubPrinter ? t("Receipt sent to the printer.") : order.number}
             </p>
           )}
         </div>
       </div>
-      <div className="receipt" id="receipt">
+      <div className="receipt" id="receipt" dir="ltr">
         <div className="r-center">
           <strong>{setup.store.name}</strong>
           {setup.store.nameAr && <div dir="rtl" lang="ar">{setup.store.nameAr}</div>}
@@ -153,10 +163,10 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
       <div className="actions noprint">
         <button type="button" className="btn outline" onClick={() => (hubPrinter ? void printHere(false) : window.print())}>
           <Icon name="printer" />
-          {hubPrinter ? "Print again" : "Print"}
+          {hubPrinter ? t("Print again") : t("Print")}
         </button>
         <button type="button" className="btn primary lg" onClick={onClose} autoFocus>
-          New sale
+          {t("New sale")}
         </button>
       </div>
     </Modal>

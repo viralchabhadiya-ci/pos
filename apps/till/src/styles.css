@@ -194,8 +194,8 @@ button.pill { min-height: 44px; }
 .catalog { display: flex; flex-direction: column; min-height: 0; padding: var(--space-4); gap: var(--space-3); }
 .searchrow { display: flex; gap: var(--space-2); }
 .searchbox { position: relative; flex: 1; }
-.searchbox .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
-.searchbox input { padding-left: 44px; min-height: 52px; }
+.searchbox .icon { position: absolute; inset-inline-start: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.searchbox input { padding-inline-start: 44px; min-height: 52px; }
 .cats { display: flex; gap: var(--space-2); overflow-x: auto; padding-bottom: var(--space-1); scrollbar-width: thin; }
 .chip {
   border: 1px solid var(--line-strong); background: var(--surface); color: var(--fg); border-radius: 999px;
@@ -207,7 +207,7 @@ button.pill { min-height: 44px; }
 .chip:disabled { opacity: 0.45; }
 .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: var(--space-3); align-content: start; padding: 2px; }
 .tile {
-  display: flex; flex-direction: column; gap: var(--space-1); text-align: left; padding: var(--space-3) var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-1); text-align: start; padding: var(--space-3) var(--space-4);
   min-height: 112px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow-1); transition: border-color var(--fast) ease, transform var(--fast) var(--ease-out), background-color var(--fast) ease;
 }
@@ -219,7 +219,7 @@ button.pill { min-height: 44px; }
 .tile .unit { font-size: var(--text-sm); font-weight: 500; color: var(--muted); }
 .no-results { grid-column: 1 / -1; text-align: center; padding: var(--space-6) var(--space-4); color: var(--muted); }
 
-.cart { display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); min-height: 0; }
+.cart { display: flex; flex-direction: column; background: var(--surface); border-inline-start: 1px solid var(--line); min-height: 0; }
 .cart-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); min-height: 52px; }
 .cart-head h2 { margin: 0; font-size: var(--text-md); }
 .cart-head .badge { font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
@@ -229,11 +229,11 @@ button.pill { min-height: 44px; }
 .line {
   width: 100%; display: grid; grid-template-columns: 28px 1fr auto; gap: var(--space-3); align-items: center;
   padding: var(--space-3) var(--space-4); min-height: 60px; border: 0; border-bottom: 1px solid var(--line);
-  border-left: 4px solid transparent; background: none; text-align: left; color: var(--fg); user-select: none;
+  border-inline-start: 4px solid transparent; background: none; text-align: start; color: var(--fg); user-select: none;
   transition: background-color var(--fast) ease;
 }
 .line:hover { background: var(--surface-2); }
-.line.on { background: var(--accent-soft); border-left-color: var(--accent); }
+.line.on { background: var(--accent-soft); border-inline-start-color: var(--accent); }
 .line .n { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .line .desc { display: flex; flex-direction: column; min-width: 0; font-weight: 500; }
 .line .desc small { font-size: var(--text-sm); font-weight: 400; }
@@ -283,8 +283,8 @@ button.pill { min-height: 44px; }
 }
 .modal:focus { outline: none; }
 .modal.wide { width: min(800px, 100%); }
-.modal h2 { padding-right: 44px; }
-.modal-close { position: absolute; top: var(--space-2); right: var(--space-2); }
+.modal h2 { padding-inline-end: 44px; }
+.modal-close { position: absolute; top: var(--space-2); inset-inline-end: var(--space-2); }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 
@@ -322,16 +322,16 @@ button.pill { min-height: 44px; }
 
 /* Tables */
 .summary, .refund-table { width: 100%; border-collapse: collapse; margin-top: var(--space-3); }
-.summary td, .refund-table td, .refund-table th { padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--line); text-align: left; }
+.summary td, .refund-table td, .refund-table th { padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--line); text-align: start; }
 .refund-table th { font-size: var(--text-sm); color: var(--muted); font-weight: 600; }
-.summary td:last-child, .refund-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.summary td:last-child, .refund-table .num { text-align: end; font-variant-numeric: tabular-nums; }
 .summary .strong td { font-weight: 700; }
 .summary .good td { color: var(--good); font-weight: 700; }
 .summary .bad td { color: var(--bad); font-weight: 700; }
-.refund-table input { width: 100px; text-align: right; }
+.refund-table input { width: 100px; text-align: end; }
 
 /* Toast: never takes focus, so scanning carries on. */
-.toast-region { position: fixed; left: var(--space-4); bottom: var(--space-4); z-index: var(--z-toast); width: min(480px, calc(100% - 32px)); pointer-events: none; }
+.toast-region { position: fixed; inset-inline-start: var(--space-4); bottom: var(--space-4); z-index: var(--z-toast); width: min(480px, calc(100% - 32px)); pointer-events: none; }
 .toast {
   display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
   background: var(--fg); color: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-3); pointer-events: auto;
@@ -346,7 +346,7 @@ button.pill { min-height: 44px; }
 }
 @media (max-width: 860px) {
   .sell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(260px, 1fr) auto; overflow-y: auto; }
-  .cart { border-left: 0; border-top: 1px solid var(--line); }
+  .cart { border-inline-start: 0; border-top: 1px solid var(--line); }
   .paydlg { grid-template-columns: 1fr; gap: var(--space-4); }
   .statusbar .where .muted { font-size: var(--text-sm); }
 }
@@ -368,8 +368,8 @@ button.pill { min-height: 44px; }
 .cd-welcome, .cd-thanks { flex: 1; display: grid; place-content: center; justify-items: center; text-align: center; gap: var(--space-4); }
 .cd-big { font-size: clamp(36px, 6vw, 80px); font-weight: 700; margin: 0; line-height: 1.15; }
 .cd-paid { display: grid; grid-template-columns: auto auto; gap: var(--space-2) var(--space-6); font-size: clamp(22px, 3vw, 40px); margin: 0; }
-.cd-paid dt { color: var(--muted); text-align: left; }
-.cd-paid dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cd-paid dt { color: var(--muted); text-align: start; }
+.cd-paid dd { margin: 0; text-align: end; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cd-change { color: var(--good); }
 .cd-qr { display: grid; justify-items: center; gap: var(--space-2); font-size: var(--text-lg); color: var(--muted); }
 .qr { background: #fff; border-radius: var(--radius); padding: 6px; }
@@ -380,12 +380,12 @@ button.pill { min-height: 44px; }
 .cd-lines li { display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-4); align-items: center; padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--line); font-size: clamp(18px, 2vw, 28px); }
 .cd-lines li:last-child { background: var(--accent-soft); }
 .cd-name { display: flex; flex-direction: column; min-width: 0; }
-.cd-name [lang="ar"] { color: var(--muted); font-size: 0.85em; text-align: left; unicode-bidi: plaintext; }
+.cd-name [lang="ar"] { color: var(--muted); font-size: 0.85em; text-align: start; unicode-bidi: plaintext; }
 .cd-qty { color: var(--muted); font-variant-numeric: tabular-nums; }
-.cd-amt { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+.cd-amt { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 5ch; text-align: end; }
 .cd-totals { display: grid; grid-template-columns: 1fr auto; gap: var(--space-1) var(--space-5); margin: 0; font-size: clamp(18px, 2vw, 28px); }
 .cd-totals dt { color: var(--muted); }
-.cd-totals dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.cd-totals dd { margin: 0; text-align: end; font-variant-numeric: tabular-nums; }
 .cd-totals .cd-grand { font-size: clamp(32px, 4.5vw, 64px); font-weight: 800; color: var(--fg); }
 .cd-offline { position: fixed; bottom: var(--space-3); left: 50%; transform: translateX(-50%); background: var(--warn-soft); color: var(--warn); padding: var(--space-2) var(--space-4); border-radius: 999px; margin: 0; font-weight: 600; }
 .line .desc .note { font-style: italic; }
@@ -393,3 +393,19 @@ button.pill { min-height: 44px; }
 .parked { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .parked li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); flex-wrap: wrap; }
 .parked .desc { flex: 1 1 220px; display: flex; flex-direction: column; min-width: 0; }
+
+/* Language and right-to-left. <html dir="rtl"> mirrors the layout through the logical
+   properties above; keypads keep their usual left-to-right order, and Arabic uses the
+   bundled Noto Sans Arabic so it looks the same on every till. */
+:root[lang="ar"] { font-family: "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, sans-serif; }
+.numpad, .keys, .pin-dots { direction: ltr; }
+.entry.typing { direction: ltr; }
+[dir="rtl"] .entry.typing { justify-content: flex-start; }
+.lang-switch { min-height: 36px; padding: 4px 14px; }
+.card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.card-top h1 { margin-top: 0; }
+.segmented { border: 0; padding: 0; margin: var(--space-4) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.segmented legend { padding: 0; margin-bottom: var(--space-2); font-weight: 600; font-size: var(--text-sm); color: var(--muted); }
+/* Clear, Note, Park and Pay share one row; longer Arabic labels must not push it wider. */
+.sell .actions { gap: var(--space-2); }
+.sell .actions .btn.ghost { padding-inline: 10px; flex-shrink: 1; min-width: 0; }
