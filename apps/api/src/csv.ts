@@ -11,9 +11,10 @@ function safeCell(value: unknown): string {
   return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
-export function toCsv(header: string[], rows: unknown[][]): string {
-  // A BOM makes Excel open UTF-8 (Arabic names) correctly.
-  return "﻿" + [header, ...rows].map((r) => r.map(safeCell).join(",")).join("\r\n") + "\r\n";
+export function toCsv(header: string[], rows: unknown[][], opts: { bom?: boolean } = {}): string {
+  // A BOM makes Excel open UTF-8 (Arabic names) correctly. Import tools that match the
+  // header by name can trip on it, so those files leave it out.
+  return (opts.bom === false ? "" : "﻿") + [header, ...rows].map((r) => r.map(safeCell).join(",")).join("\r\n") + "\r\n";
 }
 
 export function parseCsv(text: string): string[][] {

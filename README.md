@@ -209,6 +209,17 @@ if the customer were tapping, and picks the outcome from the amount's last two f
 | `.16` | The first two status checks fail, then approved |
 | anything else | Approved |
 
+### Accounting export
+
+Back office, **Accounting** (`#/accounting`):
+
+- **Daily journals**: each store day becomes one balanced journal. Payments received are debited to cash, card clearing (or a per-method account), gift card, store credit or loyalty accounts; sales net of VAT are credited by VAT type; VAT output, cash rounding, refunds (sales returns), cash paid in/out and till over/short each get their own line. Anything left over (payments not matching bill totals) goes to the rounding account with a warning.
+- **Exports**: Xero manual journals (tax-exclusive lines with Xero tax rate names, so Xero posts the VAT and it lands on Xero's VAT return; per-line rounding differences go to the rounding account), QuickBooks Online journal entries, Zoho Books manual journals, and a plain debit/credit CSV. Sales, VAT and payments day listings for the accountant. Every journal export is logged, and the page warns when dates were already exported.
+- **VAT return**: the FTA VAT 201 boxes. Box 1a-1g by store emirate (set per store, falling back to the e-invoicing emirate), 4 zero rated, 5 exempt, 8 totals; box 9 from stock received in the POS at the purchase order VAT rate, plus other expenses typed in; 12-14 net VAT. Download as CSV.
+- **Accounts**: the owner maps every line to their chart of accounts (code for Xero, name for QuickBooks and Zoho Books), sets the date format and Xero tax rate names. Migration `060_accounting.sql`.
+
+Check the first import against bank and card statements and import as drafts; the account codes, Xero tax rate names and import column mapping must match the business's own setup.
+
 ### Owner app and daily email
 
 Open http://localhost:5175 on a phone (or **Add to Home Screen**) and sign in with the back office

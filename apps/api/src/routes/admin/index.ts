@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { accountingRoutes } from "./accounting.js";
 import { authRoutes } from "./auth.js";
 import { businessRoutes } from "./business.js";
 import { catalogRoutes } from "./catalog.js";
@@ -30,4 +31,5 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(ownerRoutes);
   await app.register(promotionRoutes);
   await app.register(priceListRoutes);
+  await app.register(accountingRoutes);
 }
