@@ -14,6 +14,8 @@ import { adminRoutes } from "./routes/admin/index.js";
 import { displayRoutes } from "./routes/display.js";
 import { receiptPageRoutes } from "./routes/receiptPage.js";
 import { cardRoutes } from "./routes/card.js";
+import { platformRoutes } from "./routes/platform.js";
+import { signupRoutes } from "./routes/signup.js";
 import { createProviders, type PaymentProvider } from "./payments/index.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
@@ -24,6 +26,8 @@ export interface AdminContext {
   tenantId: string;
   role: "owner" | "manager";
   name: string;
+  /** Set when platform support signed in as this user, to help the business. */
+  support?: { by: string; reason: string; endsAt: string };
 }
 
 export interface DeviceContext {
@@ -48,7 +52,12 @@ export async function buildApp(
   db: Db,
   opts: { logger?: boolean; paymentProviders?: Map<string, PaymentProvider>; mailer?: Mailer } = {},
 ): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 5 * 1024 * 1024 });
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    bodyLimit: 5 * 1024 * 1024,
+    // Behind a load balancer, set TRUST_PROXY=1 so per-address limits (sign-up) see the real client.
+    trustProxy: process.env.TRUST_PROXY === "1",
+  });
   await app.register(cors, { origin: true });
   app.decorate("db", db);
   app.decorate("paymentProviders", opts.paymentProviders ?? createProviders());
@@ -73,14 +82,28 @@ export async function buildApp(
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) throw new HttpError(401, "unauthorized", "Please sign in");
     const { rows } = await db.query(
-      `SELECT u.id, u.tenant_id, u.role, u.name FROM admin_sessions s JOIN users u ON u.id = s.user_id
+      `SELECT u.id, u.tenant_id, u.role, u.name, t.status, s.support_reason, s.expires_at, p.name AS support_name
+         FROM admin_sessions s JOIN users u ON u.id = s.user_id JOIN tenants t ON t.id = u.tenant_id
+         LEFT JOIN platform_users p ON p.id = s.support_by
         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
           AND u.active AND u.role IN ('owner', 'manager')`,
       [hashToken(header.slice(7))],
     );
     const row = rows[0];
     if (!row) throw new HttpError(401, "unauthorized", "Your session has ended. Please sign in again.");
-    return { userId: row.id, tenantId: row.tenant_id, role: row.role, name: row.name };
+    // A paused or closed business cannot use the back office, except through a support session.
+    if (!row.support_name && (row.status === "suspended" || row.status === "cancelled")) {
+      throw new HttpError(401, "unauthorized", "This business account is paused. Contact support.");
+    }
+    return {
+      userId: row.id,
+      tenantId: row.tenant_id,
+      role: row.role,
+      name: row.support_name ? `${row.support_name} (support)` : row.name,
+      support: row.support_name
+        ? { by: row.support_name, reason: row.support_reason, endsAt: (row.expires_at as Date).toISOString() }
+        : undefined,
+    };
   });
 
   app.setErrorHandler((err, _req, reply) => {
@@ -102,7 +125,9 @@ export async function buildApp(
   await app.register(displayRoutes);
   await app.register(receiptPageRoutes);
   await app.register(cardRoutes);
+  await app.register(signupRoutes);
   await app.register(approvalRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
+  await app.register(platformRoutes, { prefix: "/platform" });
   return app;
 }

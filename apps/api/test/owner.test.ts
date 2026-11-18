@@ -119,6 +119,23 @@ describe("remote approvals", () => {
     expect((await admin("POST", `/approvals/${randomUUID()}/decide`, { decision: "approve" })).statusCode).toBe(404);
     expect((await ctx.app.inject({ method: "GET", url: "/admin/approvals", headers: ctx.auth })).statusCode).toBe(401);
   });
+
+  it("keeps platform support from deciding", async () => {
+    const a = (await ask()).json();
+    const pid = randomUUID();
+    await ctx.db.query(
+      "INSERT INTO platform_users (id, email, name, role, password_hash) VALUES ($1, 'help@platform.test', 'Sara', 'support', 'x')",
+      [pid],
+    );
+    const res = await login(ctx.data.ownerEmail, ctx.data.ownerPassword);
+    await ctx.db.query("UPDATE admin_sessions SET support_by = $1, support_reason = 'Helping' WHERE token_hash = encode(sha256($2::bytea), 'hex')", [
+      pid,
+      res.authorization.slice(7),
+    ]);
+    const denied = await admin("POST", `/approvals/${a.id}/decide`, { decision: "approve" }, res);
+    expect(denied.statusCode).toBe(403);
+    await till("POST", `/approvals/${a.id}/cancel`);
+  });
 });
 
 describe("live sales and alerts", () => {
@@ -296,6 +313,13 @@ describe("daily summary email", () => {
     await admin("PUT", "/report-settings", { dailyEnabled: false, sendHour: 0, extraEmails: [] });
     expect(await runDueReports(ctx.db, mailer)).toBe(0);
     expect((await ctx.db.query("SELECT 1 FROM report_deliveries")).rowCount).toBe(0);
+
+    // A paused business gets nothing either.
+    await admin("PUT", "/report-settings", { dailyEnabled: true, sendHour: 0, extraEmails: [] });
+    await ctx.db.query("UPDATE tenants SET status = 'suspended'");
+    expect(await runDueReports(ctx.db, mailer)).toBe(0);
+    expect((await ctx.db.query("SELECT 1 FROM report_deliveries")).rowCount).toBe(0);
+    await ctx.db.query("UPDATE tenants SET status = 'active'");
   });
 });
 

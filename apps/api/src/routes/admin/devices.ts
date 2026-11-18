@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { HttpError, notFound } from "../../errors.js";
 import { createPairingCode } from "../../seed.js";
+import { planUsage } from "../../tenants.js";
 import { adminAudit, isUniqueViolation } from "./common.js";
 
 const RegisterSchema = z.object({
@@ -47,6 +48,14 @@ export async function deviceRoutes(app: FastifyInstance) {
     const body = RegisterSchema.parse(req.body);
     const store = await app.db.query("SELECT 1 FROM stores WHERE id = $1 AND tenant_id = $2", [body.storeId, ctx.tenantId]);
     if (!store.rowCount) throw notFound("Store");
+    const usage = await planUsage(app.db, ctx.tenantId);
+    if (usage.maxRegisters !== null && usage.registers >= usage.maxRegisters) {
+      throw new HttpError(
+        409,
+        "plan_limit",
+        `The ${usage.planName} plan includes ${usage.maxRegisters} registers. Contact us to move to a bigger plan.`,
+      );
+    }
     const id = randomUUID();
     try {
       await app.db.query("INSERT INTO registers (id, store_id, code, name) VALUES ($1, $2, $3, $4)", [

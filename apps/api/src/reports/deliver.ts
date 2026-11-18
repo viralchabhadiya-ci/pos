@@ -73,6 +73,8 @@ export async function runDueReports(db: Db, mailer: Mailer, opts: SendOptions = 
        CROSS JOIN LATERAL (SELECT (now() AT TIME ZONE ${TENANT_TZ}) AS now) n
        CROSS JOIN LATERAL (SELECT n.now::date AS today) local
       WHERE COALESCE(rs.daily_enabled, true)
+        -- A paused or closed business gets no emails.
+        AND t.status NOT IN ('suspended', 'cancelled')
         AND EXTRACT(HOUR FROM n.now) >= COALESCE(rs.send_hour, 8)
         -- A business that signed up today has no yesterday to report on.
         AND (t.created_at AT TIME ZONE ${TENANT_TZ})::date < local.today

@@ -132,6 +132,8 @@ export async function ownerRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>("/approvals/:id/decide", async (req) => {
     const ctx = await app.authAdmin(req);
+    // Money decisions stay with the business's own people, not platform support.
+    if (ctx.support) throw forbidden("Support cannot approve or deny till requests");
     const body = Decision.parse(req.body);
     const id = z.string().uuid().parse(req.params.id);
     await expireApprovals(app.db, ctx.tenantId);
@@ -204,6 +206,7 @@ export async function ownerRoutes(app: FastifyInstance) {
 
   app.put("/report-settings/me", async (req) => {
     const ctx = await app.authAdmin(req);
+    if (ctx.support) throw forbidden("Support cannot change who gets the daily email");
     const body = MeSchema.parse(req.body);
     await app.db.query(
       `INSERT INTO report_subscriptions (user_id, tenant_id, daily) VALUES ($1, $2, $3)

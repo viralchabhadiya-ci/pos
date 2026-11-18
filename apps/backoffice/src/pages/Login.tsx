@@ -47,6 +47,9 @@ export function Login({ onSignedIn }: { onSignedIn: (token: string) => void }) {
           {busy ? <span className="spinner" aria-hidden="true" /> : null}
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        <p className="muted small center-text">
+          New business? <a href="#/signup">Start a free trial</a>
+        </p>
       </form>
     </main>
   );
