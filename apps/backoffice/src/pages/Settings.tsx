@@ -20,11 +20,12 @@ const ROUNDING = [
 
 const KIND_LABEL: Record<TaxKind, string> = { standard: "Standard rated", zero: "Zero rated", exempt: "Exempt" };
 
-export function Settings({ me }: { me: Me }) {
+export function Settings({ me, onAccountChanged }: { me: Me; onAccountChanged: () => void }) {
   const owner = me.user.role === "owner";
   const stores = useLoad(() => api<{ stores: Store[] }>("/stores"), []);
   const taxes = useLoad(() => api<{ taxes: Tax[] }>("/taxes"), []);
   const [editingTax, setEditingTax] = useState<Tax | "new" | null>(null);
+  const [addingStore, setAddingStore] = useState(false);
 
   return (
     <div className="page narrow-page">
@@ -36,6 +37,8 @@ export function Settings({ me }: { me: Me }) {
           </p>
         </div>
       </header>
+
+      <PlanPanel me={me} onAddStore={owner ? () => setAddingStore(true) : undefined} />
 
       {stores.error ? (
         <ErrorState message={stores.error} onRetry={stores.reload} />
@@ -105,6 +108,16 @@ export function Settings({ me }: { me: Me }) {
         )}
       </section>
 
+      {addingStore && (
+        <StoreDialog
+          onClose={() => setAddingStore(false)}
+          onSaved={() => {
+            setAddingStore(false);
+            void stores.reload();
+            onAccountChanged();
+          }}
+        />
+      )}
       {editingTax && (
         <TaxDialog
           tax={editingTax === "new" ? null : editingTax}
@@ -309,6 +322,120 @@ function TaxDialog({ tax, onClose, onSaved }: { tax: Tax | null; onClose: () => 
           <button type="submit" className="btn primary" disabled={busy}>
             {busy && <span className="spinner" aria-hidden="true" />}
             {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const STATUS_LABEL: Record<Me["account"]["status"], { label: string; tone: string }> = {
+  trial: { label: "Free trial", tone: "warn" },
+  active: { label: "Active", tone: "good" },
+  past_due: { label: "Payment overdue", tone: "warn" },
+  suspended: { label: "Paused", tone: "" },
+  cancelled: { label: "Closed", tone: "" },
+};
+
+const limit = (used: number, max: number | null) => (max === null ? `${used} (no limit)` : `${used} of ${max}`);
+
+/** The plan, what it allows and what the business uses. Plans are changed by contacting us. */
+function PlanPanel({ me, onAddStore }: { me: Me; onAddStore?: () => void }) {
+  const a = me.account;
+  const s = STATUS_LABEL[a.status];
+  const storeFull = a.maxStores !== null && a.stores >= a.maxStores;
+  return (
+    <section className="panel" aria-labelledby="h-plan">
+      <div className="panel-head">
+        <h2 id="h-plan">
+          Plan: {a.planName} <span className={`badge ${s.tone}`}>{s.label}</span>
+        </h2>
+        {onAddStore && (
+          <button type="button" className="btn sm" onClick={onAddStore} disabled={storeFull} title={storeFull ? "Your plan has no room for another store" : undefined}>
+            <Icon name="plus" /> Add store
+          </button>
+        )}
+      </div>
+      <dl className="facts">
+        <div>
+          <dt>Stores</dt>
+          <dd>{limit(a.stores, a.maxStores)}</dd>
+        </div>
+        <div>
+          <dt>Registers</dt>
+          <dd>{limit(a.registers, a.maxRegisters)}</dd>
+        </div>
+        {a.status === "trial" && a.trialEndsAt && (
+          <div>
+            <dt>Trial ends</dt>
+            <dd>{new Date(a.trialEndsAt).toLocaleDateString("en-AE", { dateStyle: "medium" })}</dd>
+          </div>
+        )}
+      </dl>
+      {storeFull && onAddStore && <p className="muted small">To add another store, contact us to move to a bigger plan.</p>}
+    </section>
+  );
+}
+
+function StoreDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [form, setForm] = useState({ name: "", code: "", address: "", trn: "" });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const errs: Record<string, string> = {};
+    if (!form.name.trim()) errs.name = "Enter the store name as it should print on receipts.";
+    if (!/^[A-Za-z0-9]{2,8}$/.test(form.code.trim())) errs.code = "2 to 8 letters or numbers, e.g. DXB2. It starts every receipt number.";
+    if (form.trn && !/^\d{15}$/.test(form.trn.trim())) errs.trn = "A TRN has 15 digits.";
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await api("/stores", {
+        body: { ...form, code: form.code.trim().toUpperCase(), timezone: "Asia/Dubai", cashRoundingStep: 25, trn: form.trn || null, address: form.address || null },
+      });
+      toast(`${form.name} added with one register`);
+      onSaved();
+    } catch (err) {
+      setFormError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} label="Add store">
+      <h2>Add store</h2>
+      <p className="muted">The store gets its first register, Counter 1. Pair a till to it from Tills &amp; devices.</p>
+      <form onSubmit={submit} noValidate>
+        <Field label="Store name" required error={errors.name}>
+          {(p) => <input {...p} value={form.name} onChange={(e) => set("name", e.target.value)} autoFocus maxLength={120} />}
+        </Field>
+        <Field label="Store code" required error={errors.code} hint="Starts every receipt number from this store, e.g. DXB2-R1-0001-0001.">
+          {(p) => <input {...p} value={form.code} onChange={(e) => set("code", e.target.value.toUpperCase())} maxLength={8} />}
+        </Field>
+        <Field label="Address">
+          {(p) => <input {...p} value={form.address} onChange={(e) => set("address", e.target.value)} maxLength={300} />}
+        </Field>
+        <Field label="VAT number (TRN)" error={errors.trn} hint="Leave empty to fill in later.">
+          {(p) => <input {...p} value={form.trn} onChange={(e) => set("trn", e.target.value)} inputMode="numeric" maxLength={15} />}
+        </Field>
+        {formError && (
+          <p className="form-error" role="alert">
+            <Icon name="alert" /> {formError}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn primary" disabled={busy}>
+            {busy && <span className="spinner" aria-hidden="true" />}
+            {busy ? "Adding…" : "Add store"}
           </button>
         </div>
       </form>

@@ -10,6 +10,8 @@ import { Dashboard } from "./pages/Dashboard.js";
 import { EInvoicing } from "./pages/EInvoicing.js";
 import { Devices } from "./pages/Devices.js";
 import { Login } from "./pages/Login.js";
+import { Signup } from "./pages/Signup.js";
+import { AccountBanner } from "./components/AccountBanner.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
 import { Products } from "./pages/Products.js";
 import { Reports } from "./pages/Reports.js";
@@ -76,6 +78,12 @@ export function App() {
 
   if (checking) return <div className="boot" aria-busy="true" />;
   if (!me) {
+    const signedIn = (token: string) => {
+      setToken(token);
+      setChecking(true);
+      void loadMe();
+    };
+    if (page === "signup") return <Signup onSignedIn={signedIn} />;
     return (
       <Login
         onSignedIn={(token) => {
@@ -103,7 +111,7 @@ export function App() {
       case "audit":
         return <Audit />;
       case "settings":
-        return <Settings me={me} />;
+        return <Settings me={me} onAccountChanged={loadMe} />;
       case "categories":
         return <Categories />;
       case "staff":
@@ -166,6 +174,7 @@ export function App() {
       </nav>
       {menuOpen && <div className="nav-scrim" onClick={() => setMenuOpen(false)} role="presentation" />}
       <main id="main" ref={main} tabIndex={-1}>
+        <AccountBanner me={me} onEndSupport={signOut} />
         {content}
       </main>
     </div>

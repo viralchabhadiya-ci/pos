@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { HttpError, notFound } from "../../errors.js";
-import { adminAudit, forbidden } from "./common.js";
+import { withTx } from "../../db.js";
+import { planUsage } from "../../tenants.js";
+import { adminAudit, forbidden, isUniqueViolation } from "./common.js";
 
 const empty = (s: string | null | undefined) => (s ? s : null);
 
@@ -162,6 +164,44 @@ export async function businessRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const { rows } = await app.db.query(`${STORE_SELECT} WHERE tenant_id = $1 ORDER BY code`, [ctx.tenantId]);
     return { stores: rows };
+  });
+
+  /** A new store with its first register, within the plan's store limit. */
+  app.post("/stores", async (req) => {
+    const ctx = await app.authAdmin(req);
+    if (ctx.role !== "owner") throw forbidden("Only the owner can add a store");
+    const body = StoreSchema.extend({
+      code: z
+        .string()
+        .trim()
+        .min(2)
+        .max(8)
+        .regex(/^[A-Za-z0-9]+$/, "Use letters and numbers, e.g. DXB2"),
+    }).parse(req.body);
+    const usage = await planUsage(app.db, ctx.tenantId);
+    if (usage.maxStores !== null && usage.stores >= usage.maxStores) {
+      throw new HttpError(409, "plan_limit", `The ${usage.planName} plan includes ${usage.maxStores} store${usage.maxStores === 1 ? "" : "s"}. Contact us to move to a bigger plan.`);
+    }
+    if (usage.maxRegisters !== null && usage.registers >= usage.maxRegisters) {
+      throw new HttpError(409, "plan_limit", `The ${usage.planName} plan includes ${usage.maxRegisters} registers, and a new store needs one.`);
+    }
+    const id = randomUUID();
+    try {
+      await withTx(app.db, async (tx) => {
+        await tx.query(
+          `INSERT INTO stores (id, tenant_id, code, name, name_ar, address, phone, trn, timezone, cash_rounding_step, receipt_footer)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [id, ctx.tenantId, body.code.toUpperCase(), body.name, empty(body.nameAr), empty(body.address), empty(body.phone),
+            empty(body.trn), body.timezone, body.cashRoundingStep, empty(body.receiptFooter)],
+        );
+        await tx.query("INSERT INTO registers (id, store_id, code, name) VALUES ($1, $2, 'R1', 'Counter 1')", [randomUUID(), id]);
+        await adminAudit(tx, ctx, "store.create", "store", id, { name: body.name, code: body.code.toUpperCase() });
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new HttpError(409, "code_taken", "Another store already uses this code");
+      throw err;
+    }
+    return { id };
   });
 
   /** Receipt details reach the tills with their next catalog sync. */
