@@ -18,6 +18,7 @@ import { Reports } from "./pages/Reports.js";
 import { Sales } from "./pages/Sales.js";
 import { Settings } from "./pages/Settings.js";
 import { Staff } from "./pages/Staff.js";
+import { Inventory } from "./pages/inventory/Inventory.js";
 
 const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -25,6 +26,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "reports", label: "Reports", icon: "chart" },
   { path: "einvoicing", label: "E-invoicing", icon: "send" },
   { path: "products", label: "Products", icon: "box" },
+  { path: "inventory", label: "Inventory", icon: "stock" },
   { path: "categories", label: "Categories", icon: "tag" },
   { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
@@ -68,7 +70,7 @@ export function App() {
     // A new page is announced by moving focus to its content, not left on the old link.
     main.current?.focus({ preventScroll: true });
     window.scrollTo(0, 0);
-  }, [page, route[1]]);
+  }, [page, route[1], route[2]]);
 
   const signOut = async () => {
     await api("/logout", { method: "POST", body: {} }).catch(() => {});
@@ -106,6 +108,8 @@ export function App() {
       case "products":
         // Keyed so the dashboard's "low stock" link resets the filter.
         return <Products key={route[1] ?? ""} me={me} initialStatus={route[1]} />;
+      case "inventory":
+        return <Inventory me={me} route={route.slice(1)} />;
       case "customers":
         return <Customers />;
       case "audit":
