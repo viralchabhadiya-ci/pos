@@ -263,7 +263,11 @@ function VatView({ data }: { data: VatReport }) {
       )}
       <p className="muted small">
         Sales are amounts before VAT, after discounts. Refunds made in these dates are credit notes and are taken off. Purchases (input VAT)
-        are not included; add them from your supplier bills.
+        are not included here. The{" "}
+        <a className="link" href="#/accounting/vat">
+          VAT return in Accounting
+        </a>{" "}
+        has every box, by emirate, with stock purchases.
       </p>
       {data.rows.length === 0 ? (
         <EmptyState icon="chart" title="No sales in these dates" />

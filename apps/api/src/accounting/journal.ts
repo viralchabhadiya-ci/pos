@@ -62,6 +62,16 @@ const KIND_LABEL: Record<SupplyKind, string> = {
 const aed = (fils: number) => `AED ${(fils / 100).toFixed(2)}`;
 const pct = (bp: number) => `${(bp / 100).toFixed(bp % 100 ? 2 : 0)}%`;
 
+/** The default account for a payment method's kind; methods can also have their own. */
+export function paymentAccount(kind: string): AccountKey {
+  if (kind === "cash") return "cash";
+  if (kind === "card" || kind === "card_manual") return "card";
+  if (/gift/.test(kind)) return "giftCards";
+  if (/credit/.test(kind)) return "storeCredit";
+  if (/loyal|point/.test(kind)) return "loyalty";
+  return "otherPayments";
+}
+
 /**
  * Turns a store day into a balanced journal: payments received on the debit side, sales
  * (net of VAT), VAT output and cash rounding on the credit side, refunds reversing them.
@@ -77,7 +87,7 @@ export function buildJournal(day: DayData, config: AccountingConfig): Journal {
 
   for (const p of day.payments) {
     const own = config.methodAccounts[p.methodId];
-    const key: AccountKey = p.kind === "cash" ? "cash" : p.kind === "card" || p.kind === "card_manual" ? "card" : "otherPayments";
+    const key = paymentAccount(p.kind);
     add({ key: own ? "method" : key, account: own ?? acc[key], description: `${p.methodName} takings`, amount: p.amount });
   }
 

@@ -8,6 +8,7 @@ import {
   FILE_PREFIX,
   FORMAT_LABEL,
   type Account,
+  type AccountKey,
   type AccountingConfig,
   type AccountingSettings,
   type ExportFormat,
@@ -500,7 +501,15 @@ function SettingsForm({ owner }: { owner: boolean }) {
   return <SettingsFields data={data} owner={owner} onSaved={reload} />;
 }
 
-const KIND_DEFAULT: Record<string, "cash" | "card" | "otherPayments"> = { cash: "cash", card: "card", card_manual: "card" };
+/** Same as paymentAccount on the server: the account a method uses unless it has its own. */
+function defaultAccountFor(kind: string): AccountKey {
+  if (kind === "cash") return "cash";
+  if (kind === "card" || kind === "card_manual") return "card";
+  if (/gift/.test(kind)) return "giftCards";
+  if (/credit/.test(kind)) return "storeCredit";
+  if (/loyal|point/.test(kind)) return "loyalty";
+  return "otherPayments";
+}
 
 function SettingsFields({ data, owner, onSaved }: { data: AccountingSettings; owner: boolean; onSaved: () => void }) {
   const toast = useToast();
@@ -593,7 +602,7 @@ function SettingsFields({ data, owner, onSaved }: { data: AccountingSettings; ow
         <h3>Payment methods</h3>
         <p className="muted small">Give a method its own account, for example one clearing account per card acquirer. Leave empty to use the account above.</p>
         {data.methods.map((m) => {
-          const fallback = form.accounts[KIND_DEFAULT[m.kind] ?? "otherPayments"];
+          const fallback = form.accounts[defaultAccountFor(m.kind)];
           const own = form.methodAccounts[m.id];
           return (
             <div className="acc-row" key={m.id}>

@@ -3,6 +3,7 @@ import { Icon, type IconName } from "./components/Icon.js";
 import { api, getToken, setToken, whenSignedOut } from "./lib/api.js";
 import { useRoute } from "./lib/router.js";
 import type { Me } from "./lib/types.js";
+import { Accounting } from "./pages/Accounting.js";
 import { Audit } from "./pages/Audit.js";
 import { Categories } from "./pages/Categories.js";
 import { Customers } from "./pages/Customers.js";
@@ -26,6 +27,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
   { path: "sales", label: "Sales", icon: "receipt" },
   { path: "reports", label: "Reports", icon: "chart" },
+  { path: "accounting", label: "Accounting", icon: "book" },
   { path: "einvoicing", label: "E-invoicing", icon: "send" },
   { path: "products", label: "Products", icon: "box" },
   { path: "inventory", label: "Inventory", icon: "stock" },
@@ -107,6 +109,8 @@ export function App() {
         return route[1] ? <OrderDetail id={route[1]} /> : <Sales />;
       case "reports":
         return <Reports />;
+      case "accounting":
+        return <Accounting me={me} tab={route[1]} />;
       case "einvoicing":
         return <EInvoicing me={me} tab={route[1]} />;
       case "products":

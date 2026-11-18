@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { renderExport } from "../src/accounting/formats.js";
-import { buildJournal, type DayData, type Journal } from "../src/accounting/journal.js";
+import { buildJournal, paymentAccount, type DayData, type Journal } from "../src/accounting/journal.js";
 import { DEFAULT_CONFIG, mergeConfig } from "../src/accounting/settings.js";
 import { parseCsv } from "../src/csv.js";
 import { hashPassword } from "../src/security.js";
@@ -109,6 +109,17 @@ describe("building a day's journal", () => {
     const xeroVat = -50;
     const total = t.rows.reduce((n, r) => n + Math.round(Number(r[5]) * 100), 0) + xeroVat;
     expect(total).toBe(0);
+  });
+
+  it("sends gift cards, store credit and loyalty to their own accounts", () => {
+    expect(["cash", "card", "card_manual", "gift_card", "store_credit", "loyalty", "voucher"].map(paymentAccount)).toEqual([
+      "cash", "card", "card", "giftCards", "storeCredit", "loyalty", "otherPayments",
+    ]);
+    const j = buildJournal(
+      { ...day, payments: [...day.payments, { methodId: randomUUID(), methodName: "Gift card", kind: "gift_card", amount: 1_000, count: 1 }], cashRounding: 2, total: 12_450 },
+      DEFAULT_CONFIG,
+    );
+    expect(j.lines.find((l) => l.description === "Gift card takings")!.account.code).toBe("2300");
   });
 
   it("falls back to defaults for anything missing from saved settings", () => {
