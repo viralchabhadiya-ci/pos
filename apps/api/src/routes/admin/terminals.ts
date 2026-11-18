@@ -18,6 +18,19 @@ const ListSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+/**
+ * Card payments to look at, for a card_transactions row aliased c. A charge refunded back to
+ * the card in full, or marked sorted by a manager, needs nothing more. A card refund that is
+ * not on a bill is a problem only when the sale it refunds is on one (the money went back but
+ * the return was never rung up).
+ */
+export const CARD_PROBLEM_SQL = `c.resolved_at IS NULL AND c.created_at < now() - interval '10 minutes' AND (
+                    c.status IN ('pending', 'unknown')
+                    OR (c.status = 'approved' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.card_transaction_id = c.id) AND (
+                      (c.kind = 'sale' AND c.amount > (SELECT COALESCE(SUM(r.amount), 0) FROM card_transactions r
+                                                        WHERE r.refund_of = c.id AND r.status = 'approved'))
+                      OR (c.kind = 'refund' AND EXISTS (SELECT 1 FROM payments p WHERE p.card_transaction_id = c.refund_of)))))`;
+
 export async function terminalRoutes(app: FastifyInstance) {
   app.get("/terminal-providers", async (req) => {
     await app.authAdmin(req);
@@ -94,15 +107,7 @@ export async function terminalRoutes(app: FastifyInstance) {
     const where = ["c.tenant_id = $1"];
     if (f.status === "approved") where.push("c.status = 'approved'");
     if (f.status === "problem") {
-      // A charge refunded back to the card in full, or marked sorted by a manager, needs nothing more.
-      // A card refund that is not on a bill is a problem only when the sale it refunds is on one
-      // (the money went back but the return was never rung up).
-      where.push(`c.resolved_at IS NULL AND c.created_at < now() - interval '10 minutes' AND (
-                    c.status IN ('pending', 'unknown')
-                    OR (c.status = 'approved' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.card_transaction_id = c.id) AND (
-                      (c.kind = 'sale' AND c.amount > (SELECT COALESCE(SUM(r.amount), 0) FROM card_transactions r
-                                                        WHERE r.refund_of = c.id AND r.status = 'approved'))
-                      OR (c.kind = 'refund' AND EXISTS (SELECT 1 FROM payments p WHERE p.card_transaction_id = c.refund_of)))))`);
+      where.push(CARD_PROBLEM_SQL);
     }
     const sql = where.join(" AND ");
     const count = await app.db.query(`SELECT COUNT(*)::int AS n FROM card_transactions c WHERE ${sql}`, [ctx.tenantId]);
