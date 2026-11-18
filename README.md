@@ -16,6 +16,7 @@ Research: [Odoo POS Blueprint](https://claude.ai/artifact/1kkW4wY7pSKbTTkpX2akY4
 | `apps/till` | Till app: React + Vite PWA with a local IndexedDB database and an outbox. Pair, PIN login, open shift, sell, split payment, bilingual tax invoice, refund, cash in/out, close shift. |
 | `apps/hub` | Store hub: a small Node service on one PC in the shop. Tills connect to it; it forwards to the cloud, queues everything while the internet is down, lets tills find each other's sales offline, and drives the LAN receipt printer and cash drawer. |
 | `apps/backoffice` | Back office web app for owners and managers: sales dashboard, products and prices, categories, stock, staff and PINs, registers and device pairing, bill search and detail. Works on desktop and phone. |
+| `apps/owner` | Owner app: a phone-first PWA for owners and managers. Live sales, alerts, approving till requests, and the daily summary email. Installs to the home screen. |
 | `packages/escpos` | Printer-neutral receipt document and its ESC/POS encoding (text, rows, barcode, QR, cut, drawer kick) for 80 mm and 58 mm thermal printers. |
 
 ## Run it locally
@@ -31,6 +32,7 @@ pnpm --filter @pos/api seed    # demo Dubai minimart; prints a pairing code
 pnpm dev:api                   # http://localhost:3000
 pnpm dev:till                  # http://localhost:5173
 pnpm dev:backoffice            # http://localhost:5174
+pnpm dev:owner                 # http://localhost:5175
 ```
 
 Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and open a shift.
@@ -166,6 +168,44 @@ if the customer were tapping, and picks the outcome from the amount's last two f
 | `.16` | The first two status checks fail, then approved |
 | anything else | Approved |
 
+### Owner app and daily email
+
+Open http://localhost:5175 on a phone (or **Add to Home Screen**) and sign in with the back office
+login. Four tabs:
+
+- **Today:** sales so far per store, refreshed every 30 seconds; by hour, cash vs card, which tills
+  have a shift open (and which have gone quiet), best sellers and the latest bills.
+- **Alerts:** what needs a look, most urgent first: approval requests, card payments not on a bill,
+  e-invoices not accepted, shifts closed AED 10 or more over or short, tills with an open shift that
+  have not synced for 15 minutes, bills whose total differs from the till, low stock, and a daily
+  email that could not be sent.
+- **Approvals:** a till can ask for remote approval (`POST /approvals` with its own request id, then
+  poll `GET /approvals/:id`, or cancel). The request shows here with a countdown (10 minutes by
+  default); the owner or a manager approves or denies it, with an optional note for the cashier.
+  With notifications on, a new request shows a phone notification while the app is open or in the
+  background, and the app icon shows the count.
+- **Reports:** any day's summary, a preview of the email, **Email me this**, and the daily email
+  settings.
+
+The **daily summary email** goes out each morning (08:00 shop time by default) and covers the day
+before: sales against the same weekday last week, bills and average, VAT, refunds, things that need
+attention, stores, payments, best sellers, cashiers, shifts closed with over/short, busiest hour and
+approvals. Owners get it unless they turn it off; managers can turn it on for themselves; the owner can
+add up to 10 more addresses (e.g. the accountant), change the hour or switch it off. Each business and
+day is sent once, even with several API servers, and retried 5 times over about an hour and a quarter
+before the owner app shows it as failed.
+
+Mail settings on the API server:
+
+| Variable | Meaning |
+| --- | --- |
+| `SMTP_URL` | Any SMTP server, e.g. `smtps://user:pass@email-smtp.me-central-1.amazonaws.com:465`. Without it, emails are only written to the log. |
+| `MAIL_FROM` | Sender, e.g. `Daily summary <reports@yourdomain.ae>`. |
+| `OWNER_APP_URL` | Link to the owner app in the email. |
+
+Build the owner app with `VITE_API_URL` when the API is on another address, and
+`VITE_BACKOFFICE_URL` to link alerts to the back office pages that deal with them.
+
 ### With a store hub
 
 ```bash
@@ -220,5 +260,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Real card terminal providers, online subscription billing, loyalty and gift cards, owner app, purchasing,
+Real card terminal providers, online subscription billing, loyalty and gift cards, web push for the owner app, purchasing,
 Windows/Android packaging. See the roadmap in the PRD.

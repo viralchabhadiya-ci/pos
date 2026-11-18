@@ -17,6 +17,8 @@ import { cardRoutes } from "./routes/card.js";
 import { platformRoutes } from "./routes/platform.js";
 import { signupRoutes } from "./routes/signup.js";
 import { createProviders, type PaymentProvider } from "./payments/index.js";
+import { approvalRoutes } from "./routes/approvals.js";
+import { createMailer, type Mailer } from "./reports/mailer.js";
 
 /** A signed-in back office user (owner or manager). */
 export interface AdminContext {
@@ -42,12 +44,13 @@ declare module "fastify" {
     authenticate: (req: FastifyRequest) => Promise<DeviceContext>;
     authAdmin: (req: FastifyRequest) => Promise<AdminContext>;
     paymentProviders: Map<string, PaymentProvider>;
+    mailer: Mailer;
   }
 }
 
 export async function buildApp(
   db: Db,
-  opts: { logger?: boolean; paymentProviders?: Map<string, PaymentProvider> } = {},
+  opts: { logger?: boolean; paymentProviders?: Map<string, PaymentProvider>; mailer?: Mailer } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger ?? false,
@@ -58,6 +61,7 @@ export async function buildApp(
   await app.register(cors, { origin: true });
   app.decorate("db", db);
   app.decorate("paymentProviders", opts.paymentProviders ?? createProviders());
+  app.decorate("mailer", opts.mailer ?? createMailer());
 
   app.decorate("authenticate", async (req: FastifyRequest): Promise<DeviceContext> => {
     const header = req.headers.authorization;
@@ -122,6 +126,7 @@ export async function buildApp(
   await app.register(receiptPageRoutes);
   await app.register(cardRoutes);
   await app.register(signupRoutes);
+  await app.register(approvalRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
   return app;
