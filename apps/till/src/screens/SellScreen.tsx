@@ -5,12 +5,29 @@ import { ManagerPin } from "../components/ManagerPin.js";
 import { StrandedCards } from "../components/StrandedCards.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
-import { addItem, cartTotals, emptyCart, needsManager, removeLine, updateLine, type Cart, type SellableItem } from "../lib/cart.js";
+import {
+  addCode,
+  addItem,
+  cartTotals,
+  emptyCart,
+  needsManager,
+  promoteCart,
+  removeCode,
+  removeLine,
+  repriceCart,
+  setCustomer,
+  updateLine,
+  type Cart,
+  type SellableItem,
+} from "../lib/cart.js";
 import { db, type DeviceSetup, type LocalOrder, type ParkedSale, type Session, type User } from "../lib/db.js";
 import { publishDisplay, receiptUrl } from "../lib/display.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
 import { itemCount, t } from "../lib/i18n.js";
+import { usePricing } from "../lib/usePricing.js";
 import { useScanner } from "../lib/useScanner.js";
+import { CouponDialog } from "./CouponDialog.js";
+import { CustomerDialog } from "./CustomerDialog.js";
 import { PaymentDialog } from "./PaymentDialog.js";
 import { ReceiptView } from "./ReceiptView.js";
 import { RefundDialog } from "./RefundDialog.js";
@@ -40,11 +57,20 @@ export function SellScreen({ setup, user }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [noting, setNoting] = useState(false);
   const [showParked, setShowParked] = useState(false);
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [showCoupon, setShowCoupon] = useState(false);
+  // Happy-hour promotions start and stop by the clock, so the sale is re-priced each minute.
+  const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const timer = setInterval(() => setMinute(Math.floor(Date.now() / 60_000)), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  const pricing = usePricing(setup, cart.customer?.priceListId);
   const parkedCount = useLiveQuery(() => db.parked.count(), []) ?? 0;
 
   const categories = useLiveQuery(() => db.categories.orderBy("sort").filter((c) => c.active).toArray(), []) ?? [];
   const taxes = useLiveQuery(async () => Object.fromEntries((await db.taxes.toArray()).map((t) => [t.id, t])), []) ?? {};
-  const items = useLiveQuery(async () => {
+  const catalog = useLiveQuery(async () => {
     const [products, variants] = await Promise.all([db.products.toArray(), db.variants.toArray()]);
     const byId = new Map(products.map((p) => [p.id, p]));
     return variants
@@ -67,6 +93,23 @@ export function SellScreen({ setup, user }: Props) {
       })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, []);
+  // Tiles and scans use this sale's prices (price lists).
+  const items = useMemo(
+    () => (catalog && pricing ? catalog.map((i) => ({ ...i, price: pricing.priceOf(i.variantId) ?? i.price })) : catalog),
+    [catalog, pricing],
+  );
+
+  // A customer with their own price list (or a change to the lists) re-prices the sale.
+  useEffect(() => {
+    if (pricing) setCart((c) => (c.refundOfOrderId ? c : repriceCart(c, pricing.priceOf)));
+  }, [pricing]);
+
+  const promoted = useMemo(
+    // `minute` is read so the promotions are worked out again as the clock moves.
+    () => (pricing && minute ? promoteCart(cart, pricing.env, new Date()) : { cart, applied: [], unknownCodes: [] }),
+    [cart, pricing, minute],
+  );
+  const promoNames = useMemo(() => new Map((pricing?.env.promotions ?? []).map((p) => [p.id, p.name])), [pricing]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -77,7 +120,8 @@ export function SellScreen({ setup, user }: Props) {
     );
   }, [items, search, categoryId]);
 
-  const totals = useMemo(() => cartTotals(cart, taxes), [cart, taxes]);
+  const totals = useMemo(() => cartTotals(promoted.cart, taxes), [promoted, taxes]);
+  const promoTotal = promoted.applied.reduce((s, a) => s + a.amount, 0);
   const isRefund = cart.refundOfOrderId !== null;
 
   // The customer display follows the cart, then shows the change and the receipt QR.
@@ -297,6 +341,29 @@ export function SellScreen({ setup, user }: Props) {
           <h2>{isRefund ? t("Refund") : t("Current sale")}</h2>
           <span className="badge">{itemCount(cart.lines.length)}</span>
         </div>
+        {!isRefund && (
+          <div className="cart-tags">
+            <button
+              type="button"
+              className={cart.customer ? "cust on" : "cust"}
+              onClick={() => setShowCustomer(true)}
+              aria-label={cart.customer ? t("Customer: {name}", { name: cart.customer.name }) : t("Add customer")}
+            >
+              <Icon name="user" size={16} />
+              <span className="cust-name">{cart.customer ? cart.customer.name : t("Customer")}</span>
+              {pricing?.listName && <span className="cust-list">{pricing.listName}</span>}
+            </button>
+            <button
+              type="button"
+              className={cart.codes?.length ? "cust coupon on" : "cust coupon"}
+              onClick={() => setShowCoupon(true)}
+              aria-label={cart.codes?.length ? t("Coupons: {codes}", { codes: cart.codes.join(", ") }) : t("Add coupon")}
+            >
+              <Icon name="ticket" size={16} />
+              <span className="cust-name">{cart.codes?.length ? cart.codes.join(", ") : t("Coupon")}</span>
+            </button>
+          </div>
+        )}
         <ol className="lines">
           {cart.lines.map((l, idx) => (
             <li key={l.id}>
@@ -310,6 +377,16 @@ export function SellScreen({ setup, user }: Props) {
                     </bdi>
                     {l.discountBp ? ` · ${t("{pct}% off", { pct: (l.discountBp / 100).toFixed(2) })}` : ""}
                   </small>
+                  {(() => {
+                    const p = promoted.cart.lines[idx];
+                    const name = p?.promotionId ? promoNames.get(p.promotionId) : null;
+                    return name ? (
+                      <small className="promo">
+                        <Icon name="tag" size={14} />
+                        {name}
+                      </small>
+                    ) : null;
+                  })()}
                   {l.note && <small className="muted note">“{l.note}”</small>}
                 </span>
                 <span className="amt">{money(totals.lines[idx]?.gross ?? 0)}</span>
@@ -329,10 +406,19 @@ export function SellScreen({ setup, user }: Props) {
             <span>{t("Subtotal (excl. VAT)")}</span>
             <span>{money(totals.subtotalNet)}</span>
           </div>
-          {totals.discountTotal !== 0 && (
+          {promoted.applied.map((a) => (
+            <div key={a.promotionId} className="promo">
+              <span>
+                {a.name}
+                {a.code ? ` (${a.code})` : ""}
+              </span>
+              <span>-{money(a.amount)}</span>
+            </div>
+          ))}
+          {totals.discountTotal - promoTotal !== 0 && (
             <div>
               <span>{t("Discounts")}</span>
-              <span>-{money(totals.discountTotal)}</span>
+              <span>-{money(Math.abs(totals.discountTotal - promoTotal))}</span>
             </div>
           )}
           <div>
@@ -422,7 +508,8 @@ export function SellScreen({ setup, user }: Props) {
       {paying && (
         <PaymentDialog
           setup={setup}
-          cart={cart}
+          cart={promoted.cart}
+          promotions={promoted.applied}
           total={totals.total}
           cashierId={user.id}
           onDone={finish}
@@ -491,6 +578,28 @@ export function SellScreen({ setup, user }: Props) {
           onResume={(p) => void resume(p)}
           onDiscard={(p) => void db.parked.delete(p.id)}
           onClose={() => setShowParked(false)}
+        />
+      )}
+      {showCustomer && (
+        <CustomerDialog
+          current={cart.customer ?? null}
+          onCancel={() => setShowCustomer(false)}
+          onPick={(c) => {
+            setCart((x) => setCustomer(x, c));
+            setShowCustomer(false);
+          }}
+        />
+      )}
+      {showCoupon && pricing && (
+        <CouponDialog
+          codes={cart.codes ?? []}
+          appliedCodes={promoted.applied.map((a) => a.code).filter((c): c is string => !!c)}
+          promotions={pricing.env.promotions}
+          storeId={setup.store.id}
+          timezone={setup.store.timezone}
+          onAdd={(c) => setCart((x) => addCode(x, c))}
+          onRemove={(c) => setCart((x) => removeCode(x, c))}
+          onClose={() => setShowCoupon(false)}
         />
       )}
       <Toast message={notice} onDone={clearNotice} />

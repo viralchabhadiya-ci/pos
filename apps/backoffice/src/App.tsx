@@ -13,6 +13,8 @@ import { Login } from "./pages/Login.js";
 import { Signup } from "./pages/Signup.js";
 import { AccountBanner } from "./components/AccountBanner.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
+import { PriceLists } from "./pages/PriceLists.js";
+import { Promotions } from "./pages/Promotions.js";
 import { Products } from "./pages/Products.js";
 import { Reports } from "./pages/Reports.js";
 import { Sales } from "./pages/Sales.js";
@@ -28,6 +30,8 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "products", label: "Products", icon: "box" },
   { path: "inventory", label: "Inventory", icon: "stock" },
   { path: "categories", label: "Categories", icon: "tag" },
+  { path: "promotions", label: "Promotions", icon: "percent" },
+  { path: "price-lists", label: "Price lists", icon: "list" },
   { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
@@ -118,6 +122,10 @@ export function App() {
         return <Settings me={me} onAccountChanged={loadMe} />;
       case "categories":
         return <Categories />;
+      case "promotions":
+        return <Promotions />;
+      case "price-lists":
+        return <PriceLists key={route[1] ?? ""} id={route[1]} />;
       case "staff":
         return <Staff me={me} />;
       case "devices":

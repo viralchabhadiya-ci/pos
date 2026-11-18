@@ -58,9 +58,18 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     if (methodKind.get(p.methodId) !== p.kind) throw reject("bad_payment_method", "Unknown payment method");
   }
 
+  const promoIds = [
+    ...new Set([...order.lines.map((l) => l.promotionId), ...order.promotions.map((p) => p.promotionId)].filter((id): id is string => !!id)),
+  ];
+  if (promoIds.length) {
+    const known = await tx.query("SELECT id FROM promotions WHERE tenant_id = $1 AND id = ANY($2)", [device.tenantId, promoIds]);
+    if (known.rowCount !== promoIds.length) throw reject("unknown_promotion", "Order has an unknown promotion");
+  }
+
   const isRefund = order.refundOfOrderId !== null;
   if (isRefund) await checkRefund(tx, device, order);
   else if (order.lines.some((l) => l.qty < 0)) throw reject("negative_qty", "Sales cannot have negative quantities");
+  else if (order.lines.some((l) => l.promoDiscount < 0)) throw reject("bad_promotion", "A promotion cannot add to the price");
 
   const totals = priceOrder(order.lines, { taxes, orderDiscountBp: order.orderDiscountBp });
   const pay = checkPayments(totals.total, order.payments, store.cash_rounding_step);
@@ -87,11 +96,12 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     const src = order.lines[i]!;
     await tx.query(
       `INSERT INTO order_lines (id, order_id, line_no, variant_id, name, qty, unit_price, discount_bp,
-         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [
         l.id, order.id, i + 1, l.variantId, l.name, l.qty, l.unitPrice, l.discountBp ?? 0, l.lineDiscount,
         l.orderDiscount, l.taxId, l.taxId ? taxes[l.taxId]!.rateBp : null, l.net, l.tax, l.gross, src.note ?? null,
+        l.promoDiscount, l.promotionId ?? null,
       ],
     );
     await tx.query(
@@ -117,10 +127,41 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
       server: { subtotalNet: totals.subtotalNet, taxTotal: totals.taxTotal, total: totals.total },
     });
   }
-  if (totals.discountTotal > 0) {
-    await audit(tx, device, order.cashierId, "order.discount", "order", order.id, { discount: totals.discountTotal });
+  // Discounts the cashier gave by hand; promotions are the owner's own and are logged below.
+  const manualDiscount = totals.lines.reduce((s, l) => s + l.lineDiscount + l.orderDiscount, 0);
+  if (manualDiscount > 0) {
+    await audit(tx, device, order.cashierId, "order.discount", "order", order.id, { discount: manualDiscount });
   }
+  if (!isRefund) await recordPromotions(tx, device, order, totals.lines.reduce((s, l) => s + l.promoDiscount, 0));
   return { id: order.id, status: "created", totalsMismatch: mismatch };
+}
+
+/**
+ * Counts each promotion used on a sale, for the owner's redemption figures and coupon use
+ * limits. The till may have priced with a promotion that has since ended (it was offline);
+ * the customer has paid, so that is accepted. Line discounts that do not add up to the
+ * promotions listed are written to the audit log.
+ */
+async function recordPromotions(tx: Tx, device: DeviceContext, order: OrderSync, lineTotal: number) {
+  const listed = order.promotions.reduce((s, p) => s + p.amount, 0);
+  if (listed !== lineTotal) {
+    await audit(tx, device, order.cashierId, "order.promo_mismatch", "order", order.id, { lines: lineTotal, promotions: listed });
+  }
+  for (const p of order.promotions) {
+    if (p.amount <= 0) continue;
+    await tx.query(
+      `INSERT INTO order_promotions (order_id, promotion_id, tenant_id, code, amount, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+      [order.id, p.promotionId, device.tenantId, p.code ? p.code.trim().toUpperCase() : null, p.amount, order.createdAt],
+    );
+    // Once a coupon reaches its limit its change time moves, so tills drop it on their next sync.
+    await tx.query(
+      `UPDATE promotions SET uses = uses + 1,
+              updated_at = CASE WHEN max_uses IS NOT NULL AND uses + 1 >= max_uses THEN now() ELSE updated_at END
+        WHERE id = $1`,
+      [p.promotionId],
+    );
+  }
 }
 
 /**
@@ -174,6 +215,24 @@ async function checkRefund(tx: Tx, device: DeviceContext, order: OrderSync) {
   for (const [variantId, qty] of asked) {
     if (qty > (room.get(variantId) ?? 0) + 1e-9) throw reject("over_refund", "Refund is more than what was sold");
   }
+
+  // Items bought on a promotion come back at what was paid for them: the refund carries its
+  // share of the promotion. Less than that would hand back more than the customer paid.
+  const promo = await tx.query(
+    `SELECT variant_id, SUM(qty)::float AS qty, SUM(promo_discount)::int AS promo
+       FROM order_lines WHERE order_id = $1 GROUP BY variant_id HAVING SUM(promo_discount) <> 0`,
+    [order.refundOfOrderId],
+  );
+  const short: { variantId: string; expected: number; given: number }[] = [];
+  for (const r of promo.rows) {
+    const lines = order.lines.filter((l) => l.variantId === r.variant_id);
+    if (!lines.length) continue;
+    const qty = -lines.reduce((s, l) => s + l.qty, 0);
+    const given = -lines.reduce((s, l) => s + l.promoDiscount, 0);
+    const expected = Math.round((r.promo * qty) / r.qty);
+    if (given < expected - lines.length) short.push({ variantId: r.variant_id, expected, given });
+  }
+  if (short.length) await audit(tx, device, order.cashierId, "refund.promo_short", "order", order.id, { lines: short });
 }
 
 export async function orderRoutes(app: FastifyInstance) {

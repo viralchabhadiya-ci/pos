@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, errorText } from "../lib/api.js";
 import { dateTime, money } from "../lib/format.js";
-import type { Customer } from "../lib/types.js";
+import type { Customer, PriceList } from "../lib/types.js";
 import { useLoad } from "../lib/useLoad.js";
 
 const PAGE = 50;
@@ -91,6 +91,11 @@ export function Customers() {
                         {c.name}
                       </button>
                       {c.trn && <span className="cell-sub tnum">TRN {c.trn}</span>}
+                      {c.priceListName && (
+                        <span className="cell-sub">
+                          <Icon name="list" size={14} /> {c.priceListName} prices
+                        </span>
+                      )}
                       {c.phone && <span className="cell-sub show-xs tnum">{c.phone}</span>}
                     </td>
                     <td className="hide-sm tnum">{c.phone ?? <span className="muted">None</span>}</td>
@@ -145,7 +150,9 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
     phone: customer?.phone ?? "",
     email: customer?.email ?? "",
     trn: customer?.trn ?? "",
+    priceListId: customer?.priceListId ?? "",
   });
+  const lists = useLoad(() => api<{ priceLists: PriceList[] }>("/price-lists"), []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,7 +171,7 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
     }
     setBusy(true);
     setFormError(null);
-    const body = { name: form.name, phone: form.phone.trim() || null, email: form.email.trim() || null, trn: form.trn.trim() || null };
+    const body = { name: form.name, phone: form.phone.trim() || null, email: form.email.trim() || null, trn: form.trn.trim() || null, priceListId: form.priceListId || null };
     try {
       if (customer) await api(`/customers/${customer.id}`, { method: "PUT", body });
       else await api("/customers", { body });
@@ -194,6 +201,21 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
         <Field id="cf-trn" label="TRN" error={errors.trn} hint="For businesses that need a full tax invoice. 15 digits.">
           {(p) => <input {...p} inputMode="numeric" value={form.trn} onChange={(e) => set("trn", e.target.value.replace(/\s/g, ""))} maxLength={15} />}
         </Field>
+        {(lists.data?.priceLists.length ?? 0) > 0 && (
+          <Field label="Price list" hint="Their own prices on the till, e.g. wholesale. Products not on the list keep normal prices.">
+            {(p) => (
+              <select {...p} value={form.priceListId} onChange={(e) => set("priceListId", e.target.value)}>
+                <option value="">Normal prices</option>
+                {lists.data!.priceLists.map((l) => (
+                  <option key={l.id} value={l.id} disabled={!l.active && l.id !== form.priceListId}>
+                    {l.name}
+                    {l.active ? "" : " (off)"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        )}
         {formError && (
           <p className="form-error" role="alert">
             <Icon name="alert" /> {formError}

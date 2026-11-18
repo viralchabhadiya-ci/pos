@@ -6,7 +6,7 @@ import { ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, errorText } from "../lib/api.js";
 import { bp } from "../lib/format.js";
-import type { Me, Store, Tax, TaxKind } from "../lib/types.js";
+import type { Me, PriceList, Store, Tax, TaxKind } from "../lib/types.js";
 import { useLoad } from "../lib/useLoad.js";
 
 const ROUNDING = [
@@ -143,7 +143,9 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
     receiptFooter: store.receiptFooter ?? "",
     cashRoundingStep: store.cashRoundingStep,
     timezone: store.timezone,
+    priceListId: store.priceListId ?? "",
   });
+  const lists = useLoad(() => api<{ priceLists: PriceList[] }>("/price-lists"), []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -172,6 +174,7 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
           phone: form.phone || null,
           trn: form.trn.trim() || null,
           receiptFooter: form.receiptFooter || null,
+          priceListId: form.priceListId || null,
         },
       });
       toast("Store details saved");
@@ -219,6 +222,21 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
             )}
           </Field>
         </div>
+        {((lists.data?.priceLists.length ?? 0) > 0 || form.priceListId) && (
+          <Field label="Price list" hint="Prices for this store. A customer's own price list still wins.">
+            {(p) => (
+              <select {...p} value={form.priceListId} onChange={(e) => set("priceListId", e.target.value)}>
+                <option value="">Normal prices</option>
+                {(lists.data?.priceLists ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                    {l.active ? "" : " (off)"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        )}
         <Field label="Receipt footer" hint="A thank-you line, return policy or both. Use | to start a new line, e.g. English | Arabic.">
           {(p) => <textarea {...p} rows={2} value={form.receiptFooter} onChange={(e) => set("receiptFooter", e.target.value)} maxLength={300} />}
         </Field>

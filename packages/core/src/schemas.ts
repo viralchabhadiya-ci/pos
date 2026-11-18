@@ -9,6 +9,9 @@ export const OrderLineSchema = z.object({
   qty: z.number().finite().refine((q) => q !== 0, "qty must not be zero"),
   unitPrice: z.number().int(),
   discountBp: z.number().int().min(0).max(10_000).default(0),
+  /** Promotion discount for the line, same sign as the line; the engine caps it at the line amount. */
+  promoDiscount: z.number().int().default(0),
+  promotionId: z.string().uuid().nullable().default(null),
   taxId: z.string().uuid().nullable(),
   note: z.string().max(500).optional(),
 });
@@ -35,6 +38,19 @@ export const OrderSyncSchema = z.object({
   orderDiscountBp: z.number().int().min(0).max(10_000).default(0),
   createdAt: z.string().datetime(),
   lines: z.array(OrderLineSchema).min(1).max(500),
+  /** Promotions the till applied, with the coupon code that unlocked each one. */
+  promotions: z
+    .array(
+      z.object({
+        promotionId: z.string().uuid(),
+        /** As the till showed it, for receipts printed before the order syncs. */
+        name: z.string().max(120).optional(),
+        amount: z.number().int(),
+        code: z.string().max(40).nullable().default(null),
+      }),
+    )
+    .max(50)
+    .default([]),
   payments: z.array(PaymentSchema).min(1).max(20),
   /** Totals as the till computed them; the server recomputes and flags any mismatch. */
   clientTotals: z.object({ subtotalNet: z.number().int(), taxTotal: z.number().int(), total: z.number().int() }),

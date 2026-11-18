@@ -43,6 +43,11 @@ export async function receiptPageRoutes(app: FastifyInstance) {
       "SELECT tax_rate_bp, SUM(net)::int AS net, SUM(tax)::int AS tax FROM order_lines WHERE order_id = $1 GROUP BY tax_rate_bp ORDER BY tax_rate_bp",
       [o.id],
     );
+    const promos = await app.db.query(
+      `SELECT p.name, op.amount FROM order_promotions op JOIN promotions p ON p.id = op.promotion_id
+        WHERE op.order_id = $1 ORDER BY p.name`,
+      [o.id],
+    );
     const refund = o.refund_of_order_id !== null;
     const date = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: o.timezone }).format(o.created_at);
     const m = (n: number) => formatMoney(n);
@@ -70,12 +75,13 @@ export async function receiptPageRoutes(app: FastifyInstance) {
       .map(
         (l) =>
           `<tr><td>${esc(l.name)}${l.note ? `<br><small class="muted">${esc(l.note)}</small>` : ""}<br><small class="muted">${m(l.unit_price)} each${
-            l.line_discount + l.order_discount ? ` · discount ${m(Math.abs(l.line_discount + l.order_discount))}` : ""
+            l.line_discount + l.promo_discount + l.order_discount ? ` · discount ${m(Math.abs(l.line_discount + l.promo_discount + l.order_discount))}` : ""
           }</small></td><td class="n">${qty(l.qty)}</td><td class="n">${m(l.gross)}</td></tr>`,
       )
       .join("")}</tbody>
   </table>
   <dl class="totals">
+    ${promos.rows.map((p) => `<dt>${esc(p.name)}</dt><dd>-${m(p.amount)}</dd>`).join("")}
     <dt>Total excl. VAT</dt><dd>${m(o.subtotal_net)}</dd>
     ${vat.rows.map((v) => `<dt>VAT ${v.tax_rate_bp === null ? "0" : v.tax_rate_bp / 100}%</dt><dd>${m(v.tax)}</dd>`).join("")}
     <dt class="grand">Total AED</dt><dd class="grand">${m(o.total)}</dd>

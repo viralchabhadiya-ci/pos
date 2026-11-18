@@ -543,6 +543,7 @@ function localOrderView(o: LocalOrder) {
     total: o.total,
     created_at: o.createdAt,
     refund_of_order_id: o.refundOfOrderId,
+    order_discount_bp: o.body.orderDiscountBp ?? 0,
     pending_at_hub: true,
     lines: o.body.lines.map((l, i) => ({
       id: l.id,
@@ -552,6 +553,8 @@ function localOrderView(o: LocalOrder) {
       qty: l.qty,
       unit_price: l.unitPrice,
       discount_bp: l.discountBp,
+      promo_discount: l.promoDiscount ?? 0,
+      promotion_id: l.promotionId ?? null,
       tax_id: l.taxId,
     })),
     payments: o.body.payments.map((p) => ({ id: p.id, method_id: p.methodId, kind: p.kind, amount: p.amount })),

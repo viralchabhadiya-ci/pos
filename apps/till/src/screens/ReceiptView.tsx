@@ -106,13 +106,19 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
             <div className="r-row">
               <span>
                 {qtyText(Math.abs(l.qty), uomOf(l.qty))} × {money(l.unitPrice)}
-                {l.lineDiscount ? ` (-${money(Math.abs(l.lineDiscount))})` : ""}
+                {l.lineDiscount + l.promoDiscount ? ` (-${money(Math.abs(l.lineDiscount + l.promoDiscount))})` : ""}
               </span>
               <span>{money(l.gross)}</span>
             </div>
           </div>
         ))}
         <hr />
+        {(order.promotions ?? []).map((p) => (
+          <div key={p.promotionId} className="r-row">
+            <span>{p.name ?? "Promotion / عرض"}</span>
+            <span>-{money(Math.abs(p.amount))}</span>
+          </div>
+        ))}
         <div className="r-row">
           <span>Total excl. VAT / المجموع بدون الضريبة</span>
           <span>{money(order.totals.subtotalNet)}</span>

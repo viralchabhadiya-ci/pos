@@ -4,8 +4,10 @@ import { businessRoutes } from "./business.js";
 import { catalogRoutes } from "./catalog.js";
 import { deviceRoutes } from "./devices.js";
 import { einvoicingRoutes } from "./einvoicing.js";
+import { priceListRoutes } from "./priceLists.js";
 import { productCsvRoutes } from "./products-csv.js";
 import { ownerRoutes } from "./owner.js";
+import { promotionRoutes } from "./promotions.js";
 import { adminReportRoutes } from "./reports.js";
 import { terminalRoutes } from "./terminals.js";
 import { salesRoutes } from "./sales.js";
@@ -26,4 +28,6 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(einvoicingRoutes);
   await app.register(inventoryRoutes);
   await app.register(ownerRoutes);
+  await app.register(promotionRoutes);
+  await app.register(priceListRoutes);
 }
