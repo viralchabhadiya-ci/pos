@@ -10,6 +10,7 @@ let ctx: Ctx;
 let owner: { authorization: string };
 let manager: { authorization: string };
 const mailer = new MemoryMailer();
+let session: string;
 
 async function login(email: string, password: string) {
   const res = await ctx.app.inject({ method: "POST", url: "/admin/login", payload: { email, password } });
@@ -123,7 +124,7 @@ describe("remote approvals", () => {
 describe("live sales and alerts", () => {
   it("shows today's sales, open shifts and what waits for the owner", async () => {
     const before = (await admin("GET", "/live")).json();
-    const session = await openSession(ctx, 1);
+    session = await openSession(ctx, 1);
     await postOrders(ctx, [makeOrder(ctx, session, [{ variant: 0, qty: 2 }]), makeOrder(ctx, session, [{ variant: 4, qty: 1 }], { pay: "cash" })]);
     await ask();
     const live = (await admin("GET", "/live")).json();
@@ -187,7 +188,6 @@ describe("daily summary email", () => {
 
   it("sums yesterday by each store's own day and compares with last week", async () => {
     const day = await yesterday();
-    const session = await openSession(ctx, 2);
     // 23:30 Dubai yesterday is still yesterday there, though it is 19:30 UTC.
     const late = makeOrder(ctx, session, [{ variant: 6, qty: 2 }]);
     late.createdAt = new Date(`${day}T19:30:00Z`).toISOString();

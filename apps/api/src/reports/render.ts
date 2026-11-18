@@ -73,21 +73,22 @@ export function renderDailyEmail(s: DailySummary, opts: { appUrl?: string } = {}
   const vs = change(t.total, s.previous.total);
   const subject = `${s.tenantName}: ${cur} ${money(t.total)} sales on ${longDate(s.date)}`;
 
+  // One row per figure: stays readable on a phone in every mail app, with no columns to squeeze.
   const stat = (label: string, value: string, note?: string | null) =>
-    `<td style="padding:12px;background:${C.soft};border-radius:8px;vertical-align:top;width:33%">
+    `<tr><td style="padding:10px 12px;background:${C.soft};border-radius:8px">
        <div style="font-size:13px;color:${C.muted}">${esc(label)}</div>
        <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:${C.fg}">${esc(value)}</div>
        ${note ? `<div style="font-size:13px;color:${C.muted}">${esc(note)}</div>` : ""}
-     </td>`;
+     </td></tr><tr><td style="height:6px;line-height:6px;font-size:0">&nbsp;</td></tr>`;
   const vsNote = vs ? `${vs} vs ${longDate(s.compareDate).split(",")[0]} last week` : "No sales the same day last week";
 
   const parts: string[] = [];
   parts.push(
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate"><tr>
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate">
       ${stat("Net sales", `${cur} ${money(t.total)}`, vsNote)}
       ${stat("Bills", String(t.orderCount), t.orderCount ? `Average ${cur} ${money(t.averageBasket)}` : null)}
       ${stat("VAT collected", `${cur} ${money(t.tax)}`, t.refundCount ? `${t.refundCount} refunds, ${cur} ${money(t.refunds)}` : "No refunds")}
-    </tr></table>`,
+    </table>`,
   );
 
   const attention = s.alerts.filter((a) => a.severity !== "low" || a.kind === "low_stock");
@@ -201,9 +202,9 @@ export function renderDailyEmail(s: DailySummary, opts: { appUrl?: string } = {}
 <body style="margin:0;padding:0;background:#f3f5f4">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5f4"><tr><td align="center" style="padding:16px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#fff;border-radius:12px;font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif;color:${C.fg}">
-<tr><td style="padding:24px">
+<tr><td style="padding:20px">
 <div style="font-size:13px;color:${C.muted}">Daily summary · ${esc(s.tenantName)}</div>
-<h1 style="font-size:22px;margin:4px 0 16px">${esc(longDate(s.date))}</h1>
+<h1 style="font-size:22px;margin:4px 0 16px;overflow-wrap:anywhere">${esc(longDate(s.date))}</h1>
 ${parts.join("\n")}
 ${link}
 <p style="margin:24px 0 0;font-size:12px;color:${C.muted}">Amounts in ${esc(cur)}, VAT included. Refunds are taken off sales. You get this email because daily summaries are on for you in the owner app.</p>
