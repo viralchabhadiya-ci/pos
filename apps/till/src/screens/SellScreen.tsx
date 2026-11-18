@@ -5,11 +5,12 @@ import { ManagerPin, type RemoteAsk } from "../components/ManagerPin.js";
 import { StrandedCards } from "../components/StrandedCards.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
-import { maskGiftCard } from "@pos/core";
+import { maskGiftCard, parseScaleBarcode } from "@pos/core";
 import {
   addCode,
   addGiftCard,
   addItem,
+  addScaleItem,
   cartTotals,
   emptyCart,
   needsManager,
@@ -27,6 +28,9 @@ import { publishDisplay, receiptUrl } from "../lib/display.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
 import { itemCount, t } from "../lib/i18n.js";
 import { logTillEvent } from "../lib/till.js";
+import { useScaleRules } from "../lib/scale.js";
+import { useScale } from "../lib/scaleReader.js";
+import { ScaleWeight } from "../components/ScaleSetup.js";
 import { usePricing } from "../lib/usePricing.js";
 import { useScanner } from "../lib/useScanner.js";
 import { CouponDialog } from "./CouponDialog.js";
@@ -60,6 +64,7 @@ export function SellScreen({ setup, user, session }: Props) {
   const [weighing, setWeighing] = useState<SellableItem | null>(null);
   const [approval, setApproval] = useState<{ reason: string; ask: RemoteAsk; apply: (approvedBy: string, approvalId?: string) => void } | null>(null);
   const [refunding, setRefunding] = useState(false);
+  const scaleRules = useScaleRules();
   const [refundOk, setRefundOk] = useState<{ orderId: string; amount: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noting, setNoting] = useState(false);
@@ -97,6 +102,7 @@ export function SellScreen({ setup, user, session }: Props) {
           barcode: v.barcode,
           extraBarcodes: v.extraBarcodes ?? [],
           sku: v.sku,
+          plu: v.plu ?? null,
           categoryId: p.categoryId,
         };
       })
@@ -204,8 +210,18 @@ export function SellScreen({ setup, user, session }: Props) {
 
   const scan = (code: string) => {
     const hit = items?.find((i) => i.barcode === code || i.extraBarcodes.includes(code) || i.sku === code);
-    if (hit) add(hit);
-    else setNotice(t("No product with barcode {code}", { code }));
+    if (hit) return add(hit);
+    // A label printed by the shop's scale: item code plus weight or price.
+    const label = parseScaleBarcode(code, scaleRules);
+    if (!label) return setNotice(t("No product with barcode {code}", { code }));
+    if (isRefund) return setNotice(t("Finish or clear the refund before adding items"));
+    const item = items?.find((i) => i.plu === label.plu);
+    if (!item) return setNotice(t("No product with scale code {plu}. Add the code to the product in the back office.", { plu: label.plu }));
+    const next = addScaleItem(cart, item, label, code);
+    if (!next) return setNotice(t("{name} is sold by the piece, but this label has a weight.", { name: item.name }));
+    setCart(next);
+    setSelected(next.lines.at(-1)!.id);
+    setEntry("");
   };
   useScanner(scan);
 
@@ -221,6 +237,10 @@ export function SellScreen({ setup, user, session }: Props) {
     if (selectedLine.giftCardCode) {
       setEntry("");
       return setNotice(t("A gift card's amount is set when it is added. Delete the line and add it again to change it."));
+    }
+    if (selectedLine.scaleLabel && mode !== "disc") {
+      setEntry("");
+      return setNotice(t("This line comes from a scale label. Weigh the item again for a new label."));
     }
     const value = Number(entry);
     if (!Number.isFinite(value)) return;
@@ -780,6 +800,8 @@ function ParkedDialog({
 function WeighDialog({ item, onWeight, onCancel }: { item: SellableItem; onWeight: (kg: number) => void; onCancel: () => void }) {
   const [kg, setKg] = useState("");
   const value = Number(kg);
+  const scale = useScale();
+  const onScale = scale.reading?.stable && scale.reading.kg > 0 ? scale.reading.kg : null;
   return (
     <Modal onClose={onCancel} label={t("Weigh {name}", { name: item.name })}>
       <h2>{item.name}</h2>
@@ -795,6 +817,13 @@ function WeighDialog({ item, onWeight, onCancel }: { item: SellableItem; onWeigh
         autoFocus
       />
       <p className="muted" aria-live="polite">{value > 0 ? t("Price: {price}", { price: aed(Math.round(item.price * value)) }) : t("Put the item on the scale or type its weight.")}</p>
+      <ScaleWeight pricePerKg={item.price} />
+      {scale.status === "on" && (
+        <button type="button" className="btn outline block" disabled={!onScale} onClick={() => onScale && onWeight(onScale)}>
+          <Icon name="scale" size={18} />
+          {onScale ? t("Add {kg} kg from the scale", { kg: onScale.toFixed(3) }) : t("Waiting for a steady weight…")}
+        </button>
+      )}
       <button type="button" className="btn primary block" disabled={!(value > 0)} onClick={() => onWeight(value)}>
         {t("Add")}
       </button>

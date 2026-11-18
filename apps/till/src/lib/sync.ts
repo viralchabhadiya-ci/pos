@@ -1,4 +1,4 @@
-import type { LoyaltySettings } from "@pos/core";
+import type { LoyaltySettings, ScaleBarcodeRule } from "@pos/core";
 import { liveQuery } from "dexie";
 import { request, ApiError, OfflineError } from "./api.js";
 import { db, type DeviceSetup, type OutboxItem } from "./db.js";
@@ -55,6 +55,7 @@ export async function pullCatalog() {
     priceLists?: never[];
     priceListItems?: never[];
     loyalty?: (LoyaltySettings & { id: string })[];
+    scale?: { id: string; rules: ScaleBarcodeRule[] }[];
     store?: DeviceSetup["store"] | null;
   }>(`/sync/catalog${query}`);
   const tables = [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.promotions, db.priceLists, db.priceListItems, db.meta];
@@ -73,6 +74,7 @@ export async function pullCatalog() {
       const { id: _id, ...settings } = data.loyalty[0]!;
       await db.setMeta("loyalty", settings);
     }
+    if (data.scale?.length) await db.setMeta("scaleRules", data.scale[0]!.rules);
     await db.setMeta("catalogSince", data.serverTime);
     if (data.store) {
       // Receipt details edited in the back office (name, TRN, footer, rounding).

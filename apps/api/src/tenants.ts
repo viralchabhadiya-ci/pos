@@ -60,6 +60,7 @@ export async function createTenant(tx: Tx, input: NewTenant) {
   );
   // Points start switched off; the owner turns them on under Loyalty.
   await tx.query("INSERT INTO loyalty_settings (tenant_id) VALUES ($1)", [tenantId]);
+  await tx.query("INSERT INTO scale_settings (tenant_id) VALUES ($1)", [tenantId]);
 
   const pin = hashPin(input.pin);
   await tx.query(

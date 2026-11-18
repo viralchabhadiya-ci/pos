@@ -23,6 +23,7 @@ export const CATALOG_KINDS = [
   "priceLists",
   "priceListItems",
   "loyalty",
+  "scale",
 ] as const;
 export type CatalogKind = (typeof CATALOG_KINDS)[number];
 

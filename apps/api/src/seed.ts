@@ -108,6 +108,7 @@ export async function seed(
     );
     // Points on: 1 point per AED 1 spent, 100 points pay AED 1.
     await tx.query("INSERT INTO loyalty_settings (tenant_id, enabled) VALUES ($1, true)", [tenantId]);
+    await tx.query("INSERT INTO scale_settings (tenant_id) VALUES ($1)", [tenantId]);
 
     const categoryIds = new Map<string, string>();
     let sort = 0;
@@ -133,8 +134,9 @@ export async function seed(
         [productId, tenantId, categoryIds.get(category), name, nameAr, uom ?? "unit", vatId],
       );
       await tx.query(
-        "INSERT INTO variants (id, tenant_id, product_id, barcode, price) VALUES ($1, $2, $3, $4, $5)",
-        [variantId, tenantId, productId, barcode, price],
+        "INSERT INTO variants (id, tenant_id, product_id, barcode, price, plu) VALUES ($1, $2, $3, $4, $5, $6)",
+        // Fresh produce sold by the kg has an item code on the scale: 1 for bananas, 2 for tomatoes.
+        [variantId, tenantId, productId, barcode, price, uom === "kg" ? String(Number(barcode.slice(2, 7))) : null],
       );
       variants.push({ id: variantId, name, price, barcode });
     }

@@ -10,6 +10,7 @@ import { LoginScreen } from "./screens/LoginScreen.js";
 import { MenuDialog } from "./screens/MenuDialog.js";
 import { OpenShiftScreen } from "./screens/OpenShiftScreen.js";
 import { PairScreen } from "./screens/PairScreen.js";
+import { reconnectScale } from "./lib/scaleReader.js";
 import { SellScreen } from "./screens/SellScreen.js";
 
 /** Pair → PIN → open shift → sell → close shift. Every step works from local data. */
@@ -44,6 +45,11 @@ export function App() {
   useEffect(() => {
     if (!setup || isDisplay || secondWindow) return;
     return startSync();
+  }, [setup, isDisplay, secondWindow]);
+
+  // A scale picked on this till before opens again by itself.
+  useEffect(() => {
+    if (setup && !isDisplay && !secondWindow) void reconnectScale();
   }, [setup, isDisplay, secondWindow]);
 
   if (!loaded) return null;

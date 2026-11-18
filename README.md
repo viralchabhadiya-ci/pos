@@ -165,6 +165,36 @@ Gift card and Points payment methods.
 - The demo data has a customer (Fatima Al Mansoori, 0501234567, 2,500 points) and a card `GIFT-DEMO-100`
   with AED 100 on it. Migration `070_loyalty.sql`.
 
+### Scales and labels
+
+Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the
+till Menu → **Scale** and the weigh screen.
+
+- **Labels from a label-printing scale:** the scale prints an EAN-13 such as `21 00042 01250 9`: a prefix,
+  the product's scale item code (PLU), then the weight in grams or the price in fils. The till reads these
+  when scanned. The usual rules come set up (`21` = weight, `22` = price, 5-digit code); the owner can
+  change them per business (a prefix of 1 to 3 digits starting with 2, a 4 to 6 digit code, and at least
+  4 digits left for the weight or price). The rules go to the
+  tills with the catalog.
+- **What the till does with one:** a weight label on a kg product adds that weight; a price label on a
+  unit product adds 1 at the label price; a price label on a kg product works out the weight, with the
+  unit price nudged so the line comes to exactly the label price. Quantity and price on these lines cannot
+  be changed (a discount still can). A code no product has, or a weight label on a product sold by the
+  piece, shows a message instead of adding anything.
+- **Scale item code:** one per product, digits only, stored without leading zeros (`0042` is `42`), never
+  shared by two products. The CSV export and import carry it as `scale_code`. The demo Bananas and
+  Tomatoes have codes 1 and 2.
+- **A scale on the till PC:** Menu → Scale connects a scale on a serial or USB port (Chrome or Edge, Web
+  Serial). Pick the speed and whether the scale sends by itself or is asked with `W`, `ENQ` or `P`. It
+  understands the common `ST,GS,+  1.250kg` style and the Mettler Toledo SICS `S S` lines, in kg or g;
+  lb is ignored. The weigh screen shows the live weight and price, and a button adds the weight once it is steady. The settings are
+  kept on that till, and it reconnects by itself next time.
+- **Printing labels:** pick products (search, a category, or all), how many of each, and a layout: A4
+  sheets of 24 (63.5 x 33.9 mm, the common 3 x 8 sticker sheet) or a 50 x 30 mm label roll. Each label has
+  the name, price and barcode: EAN-13 for a retail barcode, Code 128 for anything else. Print from the
+  browser; set the margins to none and the scale to 100%.
+- Migration `090_scales.sql`.
+
 ### New businesses and plans
 
 - **Sign-up:** *Start a free trial* on the back office sign-in page (`#/signup`). One form creates the
