@@ -54,6 +54,7 @@ export async function vat201(db: Db, tenantId: string, from: string, to: string,
          FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
          LEFT JOIN taxes t ON t.id = ol.tax_id
         WHERE o.tenant_id = $1 AND (o.created_at AT TIME ZONE s.timezone)::date BETWEEN $2::date AND $3::date
+          AND ol.gift_card_code IS NULL
         GROUP BY 1, 2, 3, 4`,
       params,
     ),

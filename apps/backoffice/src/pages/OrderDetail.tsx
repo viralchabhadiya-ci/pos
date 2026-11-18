@@ -18,6 +18,7 @@ interface Bill {
   total: number;
   cashRounding: number;
   totalsMismatch: boolean;
+  pointsEarned?: number;
   storeName: string;
   registerName: string;
   cashierName: string;
@@ -36,8 +37,19 @@ interface Bill {
     taxRateBp: number | null;
     gross: number;
     note: string | null;
+    giftCardCode?: string | null;
   }[];
-  payments: { kind: string; name: string; amount: number; tendered: number | null; change: number; reference: string | null }[];
+  payments: {
+    kind: string;
+    name: string;
+    amount: number;
+    tendered: number | null;
+    change: number;
+    reference: string | null;
+    points?: number | null;
+    giftCardCode?: string | null;
+    giftCardId?: string | null;
+  }[];
   promotions: { promotionId: string; name: string; code: string | null; amount: number }[];
 }
 
@@ -116,6 +128,7 @@ export function OrderDetail({ id }: { id: string }) {
                     <tr key={l.lineNo}>
                       <td>
                         <span className="cell-main">{l.name}</span>
+                        {l.giftCardCode && <span className="cell-sub tnum">Card {l.giftCardCode} · outside the scope of VAT</span>}
                         {l.discount > 0 && (
                           <span className="cell-sub">
                             Discount {l.discountBp ? bp(l.discountBp) : ""} −{money(l.discount)}
@@ -161,7 +174,7 @@ export function OrderDetail({ id }: { id: string }) {
             <ul className="pay-list">
               {b.payments.map((p, i) => (
                 <li key={i}>
-                  <Icon name={p.kind === "cash" ? "cash" : "card"} />
+                  <Icon name={p.kind === "cash" ? "cash" : p.kind === "gift_card" ? "gift" : p.kind === "points" ? "star" : "card"} />
                   <span className="cell-main">{p.name}</span>
                   <span className="num strong">{aed(p.amount)}</span>
                   {p.tendered != null && p.tendered !== p.amount && (
@@ -170,6 +183,12 @@ export function OrderDetail({ id }: { id: string }) {
                     </span>
                   )}
                   {p.reference && <span className="cell-sub">Ref {p.reference}</span>}
+                  {p.giftCardCode && (
+                    <a className="cell-sub row-link tnum" href={`#/loyalty/cards/${p.giftCardId}`}>
+                      Card {p.giftCardCode}
+                    </a>
+                  )}
+                  {!!p.points && <span className="cell-sub">{p.points.toLocaleString("en-AE")} points</span>}
                 </li>
               ))}
               {b.cashRounding !== 0 && (
@@ -180,6 +199,7 @@ export function OrderDetail({ id }: { id: string }) {
               <p className="muted">
                 Customer: {b.customerName}
                 {b.customerPhone ? ` · ${b.customerPhone}` : ""}
+                {b.pointsEarned ? ` · earned ${b.pointsEarned.toLocaleString("en-AE")} points` : ""}
               </p>
             )}
           </section>

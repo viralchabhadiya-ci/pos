@@ -11,6 +11,7 @@ import { Dashboard } from "./pages/Dashboard.js";
 import { EInvoicing } from "./pages/EInvoicing.js";
 import { Devices } from "./pages/Devices.js";
 import { Login } from "./pages/Login.js";
+import { Loyalty } from "./pages/Loyalty.js";
 import { Signup } from "./pages/Signup.js";
 import { AccountBanner } from "./components/AccountBanner.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
@@ -34,6 +35,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "categories", label: "Categories", icon: "tag" },
   { path: "promotions", label: "Promotions", icon: "percent" },
   { path: "price-lists", label: "Price lists", icon: "list" },
+  { path: "loyalty", label: "Loyalty & gift cards", icon: "gift" },
   { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
@@ -119,7 +121,9 @@ export function App() {
       case "inventory":
         return <Inventory me={me} route={route.slice(1)} />;
       case "customers":
-        return <Customers />;
+        return <Customers me={me} />;
+      case "loyalty":
+        return <Loyalty me={me} cardId={route[1] === "cards" ? route[2] : undefined} />;
       case "audit":
         return <Audit />;
       case "settings":

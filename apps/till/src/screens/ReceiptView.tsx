@@ -5,7 +5,8 @@ import { Modal } from "../components/Modal.js";
 import { db, type DeviceSetup, type LocalOrder, type User } from "../lib/db.js";
 import { money, qtyText } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
-import { getReceiptLang, needsDrawer, printOnHub, receiptDoc } from "../lib/print.js";
+import { maskGiftCard } from "@pos/core";
+import { getReceiptLang, needsDrawer, paymentLabel, printOnHub, receiptDoc } from "../lib/print.js";
 import { useSyncStatus } from "../lib/useSync.js";
 
 /** Orders already sent to the printer, so a re-render (or React's dev double effect) never prints twice. */
@@ -39,7 +40,7 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
     const lang = getReceiptLang();
     const arabicNames = new Map<string, string | null>();
     if (lang === "bilingual") {
-      const variants = await db.variants.bulkGet(order.lines.map((l) => l.variantId));
+      const variants = await db.variants.bulkGet(order.lines.map((l) => l.variantId ?? ""));
       const products = await db.products.bulkGet(variants.map((v) => v?.productId ?? ""));
       variants.forEach((v, i) => v && arabicNames.set(v.id, products[i]?.nameAr ?? null));
     }
@@ -102,7 +103,10 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
         <hr />
         {order.totals.lines.map((l) => (
           <div key={l.id} className="r-line">
-            <div>{l.name}</div>
+            <div>
+              {l.name}
+              {l.giftCardCode && ` ${maskGiftCard(l.giftCardCode)} · outside the scope of VAT`}
+            </div>
             <div className="r-row">
               <span>
                 {qtyText(Math.abs(l.qty), uomOf(l.qty))} × {money(l.unitPrice)}
@@ -148,7 +152,7 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
         <hr />
         {order.payments.map((p) => (
           <div key={p.id} className="r-row">
-            <span>{methods.find((m) => m.id === p.methodId)?.name ?? p.kind}</span>
+            <span>{paymentLabel(methods.find((m) => m.id === p.methodId)?.name ?? p.kind, p)}</span>
             <span>{money(p.tendered ?? p.amount)}</span>
           </div>
         ))}
@@ -156,6 +160,14 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
           <div className="r-row">
             <span>Change / الباقي</span>
             <span>{money(order.payment.change)}</span>
+          </div>
+        )}
+        {!!order.pointsEarned && (
+          <div className="r-row">
+            <span>
+              Points earned / <bdi lang="ar">نقاط مكتسبة</bdi>
+            </span>
+            <span>{order.pointsEarned}</span>
           </div>
         )}
         {setup.store.receiptFooter && <p className="r-center">{setup.store.receiptFooter}</p>}

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Modal } from "../components/Modal.js";
 import { request } from "../lib/api.js";
-import { emptyCart, type Cart, type CartLine } from "../lib/cart.js";
+import { emptyCart, type Cart, type CartCustomer, type CartLine } from "../lib/cart.js";
 import { db } from "../lib/db.js";
 import { money } from "../lib/format.js";
 import { findSale } from "../lib/till.js";
@@ -9,7 +9,9 @@ import { Icon } from "../components/Icon.js";
 import { t } from "../lib/i18n.js";
 
 interface SoldLine {
-  variantId: string;
+  variantId: string | null;
+  /** A gift card sold on the sale: what is on it is spent from the card, not refunded here. */
+  giftCardCode?: string | null;
   name: string;
   qty: number;
   unitPrice: number;
@@ -25,7 +27,13 @@ interface Sale {
   number: string;
   orderDiscountBp: number;
   lines: SoldLine[];
+  customerId: string | null;
+  /** What the sale took in points, the most a refund gives back as points. */
+  paidInPoints: number;
 }
+
+const paidInPoints = (payments: { kind: string; amount: number }[]) =>
+  payments.reduce((s, p) => s + (p.kind === "points" ? p.amount : 0), 0);
 
 /**
  * Refunds always start from the original receipt so the credit note links to it and
@@ -48,11 +56,14 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
           id: string;
           number: string;
           order_discount_bp?: number;
+          customer_id?: string | null;
+          payments?: { kind: string; amount: number }[];
           lines: {
             name: string;
             qty: number | string;
             unit_price: number;
-            variant_id: string;
+            variant_id: string | null;
+            gift_card_code?: string | null;
             discount_bp: number;
             promo_discount?: number;
             promotion_id?: string | null;
@@ -61,6 +72,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         }>(`/orders/${hit.id}`);
         const lines = full.lines.map((l) => ({
           variantId: l.variant_id,
+          giftCardCode: l.gift_card_code ?? null,
           name: l.name,
           qty: Number(l.qty),
           unitPrice: l.unit_price,
@@ -69,8 +81,15 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
           promotionId: l.promotion_id ?? null,
           taxId: l.tax_id,
         }));
-        setSale({ id: full.id, number: full.number, orderDiscountBp: full.order_discount_bp ?? 0, lines });
-        setPicked(Object.fromEntries(lines.map((l, i) => [i, l.qty])));
+        setSale({
+          id: full.id,
+          number: full.number,
+          orderDiscountBp: full.order_discount_bp ?? 0,
+          lines,
+          customerId: full.customer_id ?? null,
+          paidInPoints: paidInPoints(full.payments ?? []),
+        });
+        setPicked(Object.fromEntries(lines.map((l, i) => [i, l.giftCardCode ? 0 : l.qty])));
       } catch {
         setError(t("This sale is from another till; connect to the internet to refund it"));
       }
@@ -81,8 +100,10 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
       number: hit.number,
       orderDiscountBp: hit.orderDiscountBp ?? 0,
       lines: hit.lines.map((l) => ({ ...l, discountBp: l.discountBp ?? 0, promoDiscount: l.promoDiscount ?? 0, promotionId: l.promotionId ?? null })),
+      customerId: hit.customerId ?? null,
+      paidInPoints: paidInPoints(hit.payments),
     });
-    setPicked(Object.fromEntries(hit.lines.map((l, i) => [i, l.qty])));
+    setPicked(Object.fromEntries(hit.lines.map((l, i) => [i, l.giftCardCode ? 0 : l.qty])));
   };
 
   const start = async () => {
@@ -91,9 +112,9 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
     const variants = new Map((await db.variants.toArray()).map((v) => [v.id, v]));
     const lines: CartLine[] = sale.lines
       .map((l, i) => ({ l, qty: picked[i] ?? 0 }))
-      .filter(({ qty }) => qty > 0)
+      .filter(({ l, qty }) => qty > 0 && l.variantId)
       .map(({ l, qty }) => {
-        const v = variants.get(l.variantId);
+        const v = variants.get(l.variantId!);
         const uom = (v && products.get(v.productId)?.uom) ?? "unit";
         // Items come back at what was paid: their share of any promotion comes back with them.
         const promoDiscount = l.promoDiscount ? -Math.round((l.promoDiscount * qty) / l.qty) : 0;
@@ -111,8 +132,28 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         };
       });
     if (!lines.length) return setError(t("Pick at least one item to return"));
+    // The refund belongs to the sale's customer, so points and store credit go back to them.
+    let customer: CartCustomer | null = null;
+    if (sale.customerId) {
+      try {
+        const c = await request<{ id: string; name: string; phone: string | null; priceListId?: string | null; points?: number }>(
+          `/customers/${sale.customerId}`,
+        );
+        customer = { id: c.id, name: c.name, phone: c.phone, priceListId: c.priceListId ?? null, points: c.points };
+      } catch {
+        // Offline: the refund still carries the customer id, just not their name.
+      }
+    }
     // The sale's own discount on the whole bill applies to what comes back too.
-    onStart({ ...emptyCart(), lines, orderDiscountBp: sale.orderDiscountBp, refundOfOrderId: sale.id });
+    onStart({
+      ...emptyCart(),
+      lines,
+      orderDiscountBp: sale.orderDiscountBp,
+      refundOfOrderId: sale.id,
+      customerId: sale.customerId,
+      customer,
+      refundPointsRoom: sale.paidInPoints,
+    });
   };
 
   return (
@@ -152,7 +193,10 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
             <tbody>
               {sale.lines.map((l, i) => (
                 <tr key={i}>
-                  <td>{l.name}</td>
+                  <td>
+                    {l.name}
+                    {l.giftCardCode && <small className="muted block">{t("Gift cards are not refunded: the balance stays on the card.")}</small>}
+                  </td>
                   <td className="num">{l.qty}</td>
                   <td className="num">{money(l.unitPrice)}</td>
                   <td className="num">
@@ -160,6 +204,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
                       aria-label={t("Return quantity for {name}", { name: l.name })}
                       inputMode="decimal"
                       value={picked[i] ?? 0}
+                      disabled={!!l.giftCardCode}
                       onChange={(e) => setPicked({ ...picked, [i]: Math.min(l.qty, Math.max(0, Number(e.target.value) || 0)) })}
                     />
                   </td>

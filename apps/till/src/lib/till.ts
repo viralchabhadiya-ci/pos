@@ -1,7 +1,8 @@
-import { checkPayments, formatReceiptNumber, type AppliedPromotion, type PaymentInput, type TaxRate } from "@pos/core";
+import { checkPayments, formatReceiptNumber, pointsEarned, pointsEligible, type AppliedPromotion, type PaymentInput, type TaxRate } from "@pos/core";
 import { request, type DeviceAuth } from "./api.js";
 import type { Cart } from "./cart.js";
 import { cartTotals } from "./cart.js";
+import { getLoyalty } from "./loyalty.js";
 import { db, type CashMoveRecord, type DeviceSetup, type LocalOrder, type OutboxKind, type Session } from "./db.js";
 
 /** All till actions write locally first and queue the server call, so they work offline. */
@@ -106,6 +107,9 @@ export async function completeOrder(
   const totals = cartTotals(cart, taxes);
   const payment = checkPayments(totals.total, payments, setup.store.cashRoundingStep);
   if (!payment.complete) throw new Error("Payment does not cover the total");
+  const loyalty = await getLoyalty();
+  const earned =
+    cart.customerId && !cart.refundOfOrderId && loyalty.enabled ? pointsEarned(pointsEligible(totals.lines, payments), loyalty) : 0;
 
   return db.transaction("rw", [db.sessions, db.orders, db.outbox, db.meta, db.cardAttempts], async () => {
     const session = await currentSession();
@@ -141,9 +145,10 @@ export async function completeOrder(
       totals,
       payment,
       syncStatus: "pending",
+      ...(earned > 0 ? { pointsEarned: earned } : {}),
     };
     await db.orders.add(order);
-    const { totals: _t, payment: _p, syncStatus: _s, syncError: _e, ...wire } = order;
+    const { totals: _t, payment: _p, syncStatus: _s, syncError: _e, pointsEarned: _pe, ...wire } = order;
     await enqueue("order", order.id, wire);
     return order;
   });

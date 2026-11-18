@@ -1,3 +1,4 @@
+import type { LoyaltySettings } from "@pos/core";
 import { liveQuery } from "dexie";
 import { request, ApiError, OfflineError } from "./api.js";
 import { db, type DeviceSetup, type OutboxItem } from "./db.js";
@@ -53,6 +54,7 @@ export async function pullCatalog() {
     promotions?: never[];
     priceLists?: never[];
     priceListItems?: never[];
+    loyalty?: (LoyaltySettings & { id: string })[];
     store?: DeviceSetup["store"] | null;
   }>(`/sync/catalog${query}`);
   const tables = [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.promotions, db.priceLists, db.priceListItems, db.meta];
@@ -67,6 +69,10 @@ export async function pullCatalog() {
     await db.promotions.bulkPut(data.promotions ?? []);
     await db.priceLists.bulkPut(data.priceLists ?? []);
     await db.priceListItems.bulkPut(data.priceListItems ?? []);
+    if (data.loyalty?.length) {
+      const { id: _id, ...settings } = data.loyalty[0]!;
+      await db.setMeta("loyalty", settings);
+    }
     await db.setMeta("catalogSince", data.serverTime);
     if (data.store) {
       // Receipt details edited in the back office (name, TRN, footer, rounding).

@@ -1,6 +1,6 @@
 import { roundCash } from "./money.js";
 
-export type PaymentMethodKind = "cash" | "card" | "card_manual";
+export type PaymentMethodKind = "cash" | "card" | "card_manual" | "gift_card" | "points";
 
 export interface PaymentInput {
   id: string;
@@ -13,6 +13,10 @@ export interface PaymentInput {
   reference?: string;
   /** The integrated terminal's card payment behind this payment. */
   cardTransactionId?: string;
+  /** The gift card paid with (or refunded onto) on a gift_card payment. */
+  giftCardCode?: string;
+  /** Points spent (or given back on a refund) on a points payment. Always positive. */
+  points?: number;
 }
 
 export interface PaymentCheck {

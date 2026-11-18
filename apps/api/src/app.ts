@@ -14,6 +14,7 @@ import { adminRoutes } from "./routes/admin/index.js";
 import { displayRoutes } from "./routes/display.js";
 import { receiptPageRoutes } from "./routes/receiptPage.js";
 import { cardRoutes } from "./routes/card.js";
+import { giftCardRoutes } from "./routes/giftCards.js";
 import { platformRoutes } from "./routes/platform.js";
 import { signupRoutes } from "./routes/signup.js";
 import { createProviders, type PaymentProvider } from "./payments/index.js";
@@ -125,6 +126,7 @@ export async function buildApp(
   await app.register(displayRoutes);
   await app.register(receiptPageRoutes);
   await app.register(cardRoutes);
+  await app.register(giftCardRoutes);
   await app.register(signupRoutes);
   await app.register(approvalRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });

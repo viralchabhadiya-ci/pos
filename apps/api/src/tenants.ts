@@ -54,9 +54,12 @@ export async function createTenant(tx: Tx, input: NewTenant) {
   );
   await tx.query(
     `INSERT INTO payment_methods (id, tenant_id, name, kind) VALUES
-       ($1, $4, 'Cash', 'cash'), ($2, $4, 'Card', 'card'), ($3, $4, 'Card (manual terminal)', 'card_manual')`,
-    [randomUUID(), randomUUID(), randomUUID(), tenantId],
+       ($1, $4, 'Cash', 'cash'), ($2, $4, 'Card', 'card'), ($3, $4, 'Card (manual terminal)', 'card_manual'),
+       ($5, $4, 'Gift card', 'gift_card'), ($6, $4, 'Points', 'points')`,
+    [randomUUID(), randomUUID(), randomUUID(), tenantId, randomUUID(), randomUUID()],
   );
+  // Points start switched off; the owner turns them on under Loyalty.
+  await tx.query("INSERT INTO loyalty_settings (tenant_id) VALUES ($1)", [tenantId]);
 
   const pin = hashPin(input.pin);
   await tx.query(

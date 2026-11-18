@@ -5,8 +5,10 @@ import { ManagerPin } from "../components/ManagerPin.js";
 import { StrandedCards } from "../components/StrandedCards.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
+import { maskGiftCard } from "@pos/core";
 import {
   addCode,
+  addGiftCard,
   addItem,
   cartTotals,
   emptyCart,
@@ -27,6 +29,8 @@ import { itemCount, t } from "../lib/i18n.js";
 import { usePricing } from "../lib/usePricing.js";
 import { useScanner } from "../lib/useScanner.js";
 import { CouponDialog } from "./CouponDialog.js";
+import { GiftCardDialog } from "./GiftCardDialog.js";
+import { useLoyalty } from "../lib/loyalty.js";
 import { CustomerDialog } from "./CustomerDialog.js";
 import { PaymentDialog } from "./PaymentDialog.js";
 import { ReceiptView } from "./ReceiptView.js";
@@ -59,6 +63,8 @@ export function SellScreen({ setup, user }: Props) {
   const [showParked, setShowParked] = useState(false);
   const [showCustomer, setShowCustomer] = useState(false);
   const [showCoupon, setShowCoupon] = useState(false);
+  const [showGiftCard, setShowGiftCard] = useState(false);
+  const loyalty = useLoyalty();
   // Happy-hour promotions start and stop by the clock, so the sale is re-priced each minute.
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
   useEffect(() => {
@@ -147,7 +153,7 @@ export function SellScreen({ setup, user }: Props) {
         refund: isRefund,
         lines: cart.lines.map((l, i) => ({
           name: l.name,
-          nameAr: arabic.get(l.variantId) ?? null,
+          nameAr: l.variantId ? (arabic.get(l.variantId) ?? null) : null,
           qty: l.qty,
           uom: l.uom,
           gross: totals.lines[i]?.gross ?? 0,
@@ -200,6 +206,10 @@ export function SellScreen({ setup, user }: Props) {
 
   const applyEntry = () => {
     if (!selectedLine || entry === "") return;
+    if (selectedLine.giftCardCode) {
+      setEntry("");
+      return setNotice(t("A gift card's amount is set when it is added. Delete the line and add it again to change it."));
+    }
     const value = Number(entry);
     if (!Number.isFinite(value)) return;
     let patch: { qty?: number; discountBp?: number; unitPrice?: number };
@@ -286,6 +296,14 @@ export function SellScreen({ setup, user }: Props) {
               {t("Parked")} <span className="count">{parkedCount}</span>
             </button>
           )}
+          <button
+            type="button"
+            className="btn outline"
+            onClick={() => (isRefund ? setNotice(t("Finish or clear the refund before adding items")) : setShowGiftCard(true))}
+          >
+            <Icon name="gift" />
+            {t("Gift card")}
+          </button>
           <button type="button" className="btn outline" onClick={() => setRefunding(true)}>
             <Icon name="refund" />
             {t("Refund")}
@@ -352,6 +370,9 @@ export function SellScreen({ setup, user }: Props) {
               <Icon name="user" size={16} />
               <span className="cust-name">{cart.customer ? cart.customer.name : t("Customer")}</span>
               {pricing?.listName && <span className="cust-list">{pricing.listName}</span>}
+              {loyalty.enabled && cart.customer?.points !== undefined && (
+                <span className="cust-list">{t("{n} pts", { n: cart.customer.points })}</span>
+              )}
             </button>
             <button
               type="button"
@@ -370,7 +391,7 @@ export function SellScreen({ setup, user }: Props) {
               <button type="button" className={l.id === selected ? "line on" : "line"} aria-pressed={l.id === selected} onClick={() => setSelected(l.id)}>
                 <span className="n">{idx + 1}</span>
                 <span className="desc">
-                  {l.name}
+                  {l.giftCardCode ? `${t("Gift card")} ${maskGiftCard(l.giftCardCode)}` : l.name}
                   <small className="muted">
                     <bdi>
                       {qtyText(l.qty, l.uom)} × {money(l.unitPrice)}
@@ -505,6 +526,17 @@ export function SellScreen({ setup, user }: Props) {
         </div>
       </section>
 
+      {showGiftCard && (
+        <GiftCardDialog
+          onClose={() => setShowGiftCard(false)}
+          onAdd={(code, amount) => {
+            const next = addGiftCard(cart, code, amount);
+            setCart(next);
+            setSelected(next.lines.at(-1)!.id);
+            setShowGiftCard(false);
+          }}
+        />
+      )}
       {paying && (
         <PaymentDialog
           setup={setup}

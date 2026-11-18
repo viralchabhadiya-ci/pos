@@ -5,13 +5,14 @@ import { Modal } from "../components/Modal.js";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, errorText } from "../lib/api.js";
-import { dateTime, money } from "../lib/format.js";
-import type { Customer, PriceList } from "../lib/types.js";
+import { aed, dateTime, money } from "../lib/format.js";
+import type { Customer, CustomerLoyalty, Me, PriceList } from "../lib/types.js";
+import { AdjustDialog, MOVE_LABEL, signedPts } from "./Loyalty.js";
 import { useLoad } from "../lib/useLoad.js";
 
 const PAGE = 50;
 
-export function Customers() {
+export function Customers({ me }: { me: Me }) {
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
@@ -77,6 +78,7 @@ export function Customers() {
                   <th scope="col" className="hide-sm">Phone</th>
                   <th scope="col" className="num hide-xs">Bills</th>
                   <th scope="col" className="num">Spent (AED)</th>
+                  <th scope="col" className="num hide-sm">Points</th>
                   <th scope="col" className="hide-sm">Last visit</th>
                   <th scope="col">
                     <span className="sr-only">Actions</span>
@@ -101,6 +103,7 @@ export function Customers() {
                     <td className="hide-sm tnum">{c.phone ?? <span className="muted">None</span>}</td>
                     <td className="num hide-xs">{c.orders}</td>
                     <td className="num strong">{money(c.spent ?? 0)}</td>
+                    <td className="num hide-sm">{c.points ? c.points.toLocaleString("en-AE") : <span className="muted">0</span>}</td>
                     <td className="hide-sm">{c.lastVisit ? dateTime(c.lastVisit) : <span className="muted">Never</span>}</td>
                     <td className="actions">
                       <button type="button" className="btn ghost sm" onClick={() => setEditing(c)} aria-label={`Edit ${c.name}`}>
@@ -138,7 +141,7 @@ export function Customers() {
           }}
         />
       )}
-      {viewing && <CustomerBills customer={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <CustomerBills customer={viewing} owner={me.user.role === "owner"} onClose={() => setViewing(null)} onChanged={list.reload} />}
     </div>
   );
 }
@@ -235,7 +238,10 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
   );
 }
 
-function CustomerBills({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+function CustomerBills({ customer, owner, onClose, onChanged }: { customer: Customer; owner: boolean; onClose: () => void; onChanged: () => void }) {
+  const toast = useToast();
+  const loyalty = useLoad(() => api<CustomerLoyalty>(`/customers/${customer.id}/loyalty`), [customer.id]);
+  const [adjusting, setAdjusting] = useState(false);
   const detail = useLoad(
     () => api<Customer & { orders: { id: string; number: string; createdAt: string; total: number; isRefund: boolean }[] }>(`/customers/${customer.id}`),
     [customer.id],
@@ -246,6 +252,76 @@ function CustomerBills({ customer, onClose }: { customer: Customer; onClose: () 
       <p className="muted">
         {[customer.phone, customer.email, customer.trn && `TRN ${customer.trn}`].filter(Boolean).join(" · ") || "No contact details"}
       </p>
+      {loyalty.data && (
+        <section className="points-box" aria-label="Points and gift cards">
+          <div className="points-head">
+            <span>
+              <Icon name="star" size={18} /> <strong>{loyalty.data.points.toLocaleString("en-AE")}</strong> points
+            </span>
+            {owner && (
+              <button type="button" className="btn ghost sm" onClick={() => setAdjusting(true)}>
+                <Icon name="edit" size={16} /> Change points
+              </button>
+            )}
+          </div>
+          {loyalty.data.giftCards.length > 0 && (
+            <p className="muted">
+              Gift cards:{" "}
+              {loyalty.data.giftCards.map((g, i) => (
+                <span key={g.id}>
+                  {i > 0 && ", "}
+                  <a className="row-link tnum" href={`#/loyalty/cards/${g.id}`} onClick={onClose}>
+                    {g.code}
+                  </a>{" "}
+                  ({aed(g.balance)})
+                </span>
+              ))}
+            </p>
+          )}
+          {loyalty.data.moves.length > 0 && (
+            <details>
+              <summary>Points history</summary>
+              <ul className="plain-list points-moves">
+                {loyalty.data.moves.map((m) => (
+                  <li key={m.id}>
+                    <span>
+                      {MOVE_LABEL[m.kind] ?? m.kind}
+                      {m.orderNumber && (
+                        <>
+                          {" "}
+                          <a className="row-link tnum" href={`#/sales/${m.orderId}`} onClick={onClose}>
+                            {m.orderNumber}
+                          </a>
+                        </>
+                      )}
+                      {m.note && <span className="muted"> · {m.note}</span>}
+                      <span className="cell-sub">{dateTime(m.at)}</span>
+                    </span>
+                    <span className={m.points < 0 ? "num strong bad" : "num strong good"}>{signedPts(m.points)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      )}
+      {adjusting && loyalty.data && (
+        <AdjustDialog
+          title={`Change ${customer.name}'s points`}
+          unit="points"
+          current={`${loyalty.data.points.toLocaleString("en-AE")} points`}
+          onClose={() => setAdjusting(false)}
+          onSave={async (value, note) => {
+            const points = Number(value.replace(/[\s,+]/g, ""));
+            if (!Number.isInteger(points) || points === 0) throw new Error("Enter whole points, like 500 to add or -500 to take off");
+            const res = await api<{ points: number }>(`/customers/${customer.id}/points`, { body: { points, note } });
+            toast(`${customer.name} now has ${res.points.toLocaleString("en-AE")} points`);
+            setAdjusting(false);
+            await loyalty.reload();
+            onChanged();
+          }}
+        />
+      )}
       {detail.error ? (
         <ErrorState message={detail.error} onRetry={detail.reload} />
       ) : !detail.data ? (

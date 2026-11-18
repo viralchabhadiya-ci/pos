@@ -1,8 +1,9 @@
-import { checkPayments, OrderBatchSchema, priceOrder, type OrderSync, type TaxRate } from "@pos/core";
+import { checkPayments, OrderBatchSchema, pointsEarned, pointsEligible, priceOrder, type OrderSync, type PricedLine, type TaxRate } from "@pos/core";
 import type { FastifyInstance } from "fastify";
 import type { DeviceContext } from "../app.js";
 import { withTx, type Tx } from "../db.js";
 import { HttpError } from "../errors.js";
+import { lockGiftCard, lockOrCreateGiftCard, loyaltySettings, moveGiftCard, movePoints } from "../loyalty.js";
 import { audit } from "./audit.js";
 
 type Result =
@@ -30,7 +31,13 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
 
   const store = (await tx.query("SELECT cash_rounding_step FROM stores WHERE id = $1", [device.storeId])).rows[0];
 
-  const variantIds = [...new Set(order.lines.map((l) => l.variantId))];
+  for (const l of order.lines) {
+    if ((l.variantId === null) === !l.giftCardCode) throw reject("bad_line", "A line sells either a product or a gift card");
+    if (l.giftCardCode && (l.taxId || l.discountBp || l.promoDiscount || l.promotionId || l.unitPrice <= 0)) {
+      throw reject("bad_gift_card_line", "A gift card line has no VAT and no discount");
+    }
+  }
+  const variantIds = [...new Set(order.lines.map((l) => l.variantId).filter((v): v is string => !!v))];
   const variants = await tx.query("SELECT id FROM variants WHERE tenant_id = $1 AND id = ANY($2)", [
     device.tenantId,
     variantIds,
@@ -56,6 +63,8 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
   const methodKind = new Map(methods.rows.map((m) => [m.id as string, m.kind as string]));
   for (const p of order.payments) {
     if (methodKind.get(p.methodId) !== p.kind) throw reject("bad_payment_method", "Unknown payment method");
+    if (p.kind === "gift_card" && !p.giftCardCode) throw reject("bad_payment", "A gift card payment needs the card number");
+    if (p.kind === "points" && !p.points) throw reject("bad_payment", "A points payment needs the number of points");
   }
 
   const promoIds = [
@@ -67,9 +76,21 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
   }
 
   const isRefund = order.refundOfOrderId !== null;
-  if (isRefund) await checkRefund(tx, device, order);
+  // A refund belongs to the customer on the original sale: their points are what it changes.
+  let customerId = order.customerId;
+  if (isRefund) customerId = (await checkRefund(tx, device, order)) ?? customerId;
   else if (order.lines.some((l) => l.qty < 0)) throw reject("negative_qty", "Sales cannot have negative quantities");
   else if (order.lines.some((l) => l.promoDiscount < 0)) throw reject("bad_promotion", "A promotion cannot add to the price");
+  if (order.lines.some((l) => l.giftCardCode && (isRefund || l.qty !== 1))) {
+    throw reject("gift_card_line", "A gift card is sold one at a time, and what is on it cannot be refunded as a product");
+  }
+  if (customerId) {
+    const c = await tx.query("SELECT 1 FROM customers WHERE id = $1 AND tenant_id = $2", [customerId, device.tenantId]);
+    if (!c.rowCount) throw reject("unknown_customer", "Customer not found (it may not have synced yet)");
+  }
+  if (order.payments.some((p) => p.kind === "points") && !customerId) {
+    throw reject("points_without_customer", "Points can only be used with a customer on the bill");
+  }
 
   const totals = priceOrder(order.lines, { taxes, orderDiscountBp: order.orderDiscountBp });
   const pay = checkPayments(totals.total, order.payments, store.cash_rounding_step);
@@ -86,7 +107,7 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     [
       order.id, device.tenantId, device.storeId, device.registerId, order.sessionId, order.number,
-      order.cashierId, order.customerId, order.refundOfOrderId, order.orderDiscountBp, totals.amountTotal,
+      order.cashierId, customerId, order.refundOfOrderId, order.orderDiscountBp, totals.amountTotal,
       totals.discountTotal, totals.subtotalNet, totals.taxTotal, totals.total, pay.cashRounding,
       order.clientTotals.total, mismatch, order.createdAt,
     ],
@@ -96,14 +117,18 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     const src = order.lines[i]!;
     await tx.query(
       `INSERT INTO order_lines (id, order_id, line_no, variant_id, name, qty, unit_price, discount_bp,
-         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id, gift_card_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
         l.id, order.id, i + 1, l.variantId, l.name, l.qty, l.unitPrice, l.discountBp ?? 0, l.lineDiscount,
         l.orderDiscount, l.taxId, l.taxId ? taxes[l.taxId]!.rateBp : null, l.net, l.tax, l.gross, src.note ?? null,
-        l.promoDiscount, l.promotionId ?? null,
+        l.promoDiscount, l.promotionId ?? null, src.giftCardCode ?? null,
       ],
     );
+    if (src.giftCardCode) {
+      await loadGiftCard(tx, device, order, customerId, src.giftCardCode, l.gross);
+      continue;
+    }
     await tx.query(
       `INSERT INTO stock_moves (tenant_id, store_id, variant_id, qty, reason, ref_id, at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -114,12 +139,19 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
   for (const p of order.payments) {
     const change = Math.max(0, (p.tendered ?? p.amount) - p.amount);
     const cardTx = p.cardTransactionId ? await linkCardPayment(tx, device, order, p) : null;
+    const giftCard = p.kind === "gift_card" ? await giftCardPayment(tx, device, order, customerId, p) : null;
     await tx.query(
-      `INSERT INTO payments (id, order_id, method_id, kind, amount, tendered, change, reference, card_transaction_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [p.id, order.id, p.methodId, p.kind, p.amount, p.tendered ?? null, change, p.reference ?? null, cardTx],
+      `INSERT INTO payments (id, order_id, method_id, kind, amount, tendered, change, reference, card_transaction_id,
+         gift_card_id, points)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        p.id, order.id, p.methodId, p.kind, p.amount, p.tendered ?? null, change, p.reference ?? null, cardTx,
+        giftCard, p.kind === "points" ? p.points : null,
+      ],
     );
   }
+
+  if (customerId) await bookPoints(tx, device, order, customerId, totals.lines);
 
   if (mismatch) {
     await audit(tx, device, order.cashierId, "order.totals_mismatch", "order", order.id, {
@@ -191,9 +223,149 @@ async function linkCardPayment(tx: Tx, device: DeviceContext, order: OrderSync, 
   return c.id as string;
 }
 
-/** A refund must point at a sale from this tenant and cannot return more than was sold. */
-async function checkRefund(tx: Tx, device: DeviceContext, order: OrderSync) {
-  const original = await tx.query("SELECT id FROM orders WHERE id = $1 AND tenant_id = $2 AND refund_of_order_id IS NULL", [
+/**
+ * Loads a gift card sold on this bill: a new number becomes a new card, a number that exists is
+ * topped up. The customer has paid either way, so a switched-off card is still loaded and the
+ * owner is told.
+ */
+async function loadGiftCard(tx: Tx, device: DeviceContext, order: OrderSync, customerId: string | null, code: string, amount: number) {
+  const existing = await lockGiftCard(tx, device.tenantId, code);
+  const card = existing ?? (await lockOrCreateGiftCard(tx, device.tenantId, code, customerId));
+  await moveGiftCard(tx, {
+    tenantId: device.tenantId,
+    cardId: card.id,
+    amount,
+    kind: existing ? "topup" : "sale",
+    orderId: order.id,
+    storeId: device.storeId,
+    userId: order.cashierId,
+  });
+  if (existing && existing.status !== "active") {
+    await audit(tx, device, order.cashierId, "gift_card.topup_disabled", "gift_card", card.id, { order: order.number, amount });
+  }
+}
+
+/**
+ * Ties a gift card payment to the bill. A spend is normally taken when the cashier adds the
+ * payment (POST /gift-cards/redeem); this links it. If it was not (or was given back since),
+ * the card is charged now, even below zero, because the customer has already left with the
+ * goods; the owner sees it in the audit log. A refund onto a gift card loads it, making a new
+ * card when the number is new: that is how store credit is given.
+ */
+async function giftCardPayment(tx: Tx, device: DeviceContext, order: OrderSync, customerId: string | null, p: OrderSync["payments"][number]) {
+  const code = p.giftCardCode!;
+  const base = { tenantId: device.tenantId, orderId: order.id, storeId: device.storeId, userId: order.cashierId };
+  if (p.amount < 0) {
+    const card = await lockOrCreateGiftCard(tx, device.tenantId, code, customerId);
+    await moveGiftCard(tx, { ...base, cardId: card.id, amount: -p.amount, kind: "refund", paymentId: p.id });
+    return card.id;
+  }
+  // Lock the card before reading its moves, so a give-back running at the same time is seen.
+  const card = await lockGiftCard(tx, device.tenantId, code);
+  const spent = await tx.query(
+    `SELECT m.id, m.gift_card_id, m.amount, m.order_id,
+            EXISTS (SELECT 1 FROM gift_card_moves v WHERE v.payment_id = m.payment_id AND v.kind = 'redeem_void') AS voided
+       FROM gift_card_moves m WHERE m.payment_id = $1 AND m.kind = 'redeem' AND m.tenant_id = $2`,
+    [p.id, device.tenantId],
+  );
+  const move = spent.rows[0];
+  if (move && !move.voided) {
+    await tx.query("UPDATE gift_card_moves SET order_id = $2 WHERE id = $1", [move.id, order.id]);
+    if (-move.amount !== p.amount || move.gift_card_id !== card?.id) {
+      await audit(tx, device, order.cashierId, "order.gift_card_mismatch", "order", order.id, { code, taken: -move.amount, paid: p.amount });
+    }
+    return move.gift_card_id as string;
+  }
+  if (!card) {
+    await audit(tx, device, order.cashierId, "order.gift_card_mismatch", "order", order.id, { code, reason: "unknown gift card", paid: p.amount });
+    return null;
+  }
+  const balance = await moveGiftCard(tx, {
+    ...base,
+    cardId: card.id,
+    amount: -p.amount,
+    kind: move ? "adjust" : "redeem",
+    paymentId: move ? null : p.id,
+    note: move ? `Spent on ${order.number} after it was given back` : null,
+  });
+  await audit(tx, device, order.cashierId, "order.gift_card_late", "order", order.id, { code, paid: p.amount, balance });
+  return card.id;
+}
+
+/**
+ * Points for a bill with a customer: points paid or given back, then points earned on a sale
+ * or taken back by a refund. The till checks the balance online before spending points, but two
+ * tills could still spend the same points at the same moment; the balance then goes below zero
+ * and the owner is told, rather than losing a sale the customer has already paid for.
+ */
+async function bookPoints(tx: Tx, device: DeviceContext, order: OrderSync, customerId: string, lines: PricedLine[]) {
+  const settings = await loyaltySettings(tx, device.tenantId);
+  const base = { tenantId: device.tenantId, customerId, orderId: order.id, userId: order.cashierId, at: order.createdAt };
+  await tx.query("SELECT 1 FROM customers WHERE id = $1 FOR UPDATE", [customerId]);
+  let balance: number | null = null;
+  for (const p of order.payments) {
+    if (p.kind !== "points") continue;
+    const points = p.points!;
+    balance = await movePoints(tx, { ...base, points: p.amount >= 0 ? -points : points, kind: p.amount >= 0 ? "redeem" : "refund_redeem" });
+    if (p.amount >= 0 && points * settings.pointValueFils !== p.amount) {
+      await audit(tx, device, order.cashierId, "loyalty.value_mismatch", "order", order.id, {
+        points,
+        paid: p.amount,
+        pointValueFils: settings.pointValueFils,
+      });
+    }
+  }
+  if (balance !== null && balance < 0) {
+    await audit(tx, device, order.cashierId, "loyalty.overdrawn", "customer", customerId, { order: order.number, balance });
+  }
+
+  if (order.refundOfOrderId) {
+    // Take back the share of what the sale earned that this refund returns.
+    const { rows } = await tx.query(
+      `SELECT o.points_earned AS earned,
+              (SELECT COALESCE(SUM(gross), 0) FROM order_lines WHERE order_id = o.id AND gift_card_code IS NULL)::int AS goods,
+              (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE order_id = o.id AND kind = 'points')::int AS "paidPoints",
+              (SELECT COALESCE(-SUM(p.amount), 0) FROM payments p JOIN orders x ON x.id = p.order_id
+                WHERE x.refund_of_order_id = o.id AND p.kind = 'points' AND x.id <> $2)::int AS "refundedPoints",
+              (SELECT COALESCE(-SUM(points), 0) FROM loyalty_moves WHERE kind = 'refund_earn'
+                  AND order_id IN (SELECT id FROM orders WHERE refund_of_order_id = o.id))::int AS taken
+         FROM orders o WHERE o.id = $1`,
+      [order.refundOfOrderId, order.id],
+    );
+    const r = rows[0];
+    if (!r) return;
+    // More given back in points than the sale took in points turns cash into points: allowed
+    // (the cashier may have had a reason) but the owner is told.
+    const toPoints = -order.payments.reduce((s, p) => s + (p.kind === "points" ? p.amount : 0), 0);
+    if (toPoints > r.paidPoints - r.refundedPoints) {
+      await audit(tx, device, order.cashierId, "refund.points_over", "order", order.id, {
+        refundedInPoints: toPoints,
+        paidInPoints: r.paidPoints - r.refundedPoints,
+      });
+    }
+    if (r.earned <= 0 || r.goods <= 0) return;
+    // Earned points come back in proportion to the goods returned.
+    const goods = -lines.reduce((s, l) => s + (l.giftCardCode ? 0 : l.gross), 0);
+    const share = Math.min(r.earned - r.taken, Math.round((r.earned * Math.min(goods, r.goods)) / r.goods));
+    if (share <= 0) return;
+    const left = await movePoints(tx, { ...base, points: -share, kind: "refund_earn" });
+    // The customer already spent the points this refund takes back: the balance owes them.
+    if (left < 0) await audit(tx, device, order.cashierId, "loyalty.overdrawn", "customer", customerId, { order: order.number, balance: left });
+    return;
+  }
+  if (!settings.enabled) return;
+  const earned = pointsEarned(pointsEligible(lines, order.payments), settings);
+  if (earned <= 0) return;
+  await movePoints(tx, { ...base, points: earned, kind: "earn" });
+  await tx.query("UPDATE orders SET points_earned = $2 WHERE id = $1", [order.id, earned]);
+}
+
+/**
+ * A refund must point at a sale from this tenant and cannot return more than was sold.
+ * Returns the sale's customer.
+ */
+async function checkRefund(tx: Tx, device: DeviceContext, order: OrderSync): Promise<string | null> {
+  const original = await tx.query("SELECT id, customer_id FROM orders WHERE id = $1 AND tenant_id = $2 AND refund_of_order_id IS NULL", [
     order.refundOfOrderId,
     device.tenantId,
   ]);
@@ -211,7 +383,7 @@ async function checkRefund(tx: Tx, device: DeviceContext, order: OrderSync) {
   );
   const room = new Map(rows.map((r) => [r.variant_id as string, (r.sold ?? 0) - r.refunded]));
   const asked = new Map<string, number>();
-  for (const l of order.lines) asked.set(l.variantId, (asked.get(l.variantId) ?? 0) - l.qty);
+  for (const l of order.lines) if (l.variantId) asked.set(l.variantId, (asked.get(l.variantId) ?? 0) - l.qty);
   for (const [variantId, qty] of asked) {
     if (qty > (room.get(variantId) ?? 0) + 1e-9) throw reject("over_refund", "Refund is more than what was sold");
   }
@@ -233,6 +405,7 @@ async function checkRefund(tx: Tx, device: DeviceContext, order: OrderSync) {
     if (given < expected - lines.length) short.push({ variantId: r.variant_id, expected, given });
   }
   if (short.length) await audit(tx, device, order.cashierId, "refund.promo_short", "order", order.id, { lines: short });
+  return original.rows[0].customer_id as string | null;
 }
 
 export async function orderRoutes(app: FastifyInstance) {

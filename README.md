@@ -132,6 +132,29 @@ Promotions are set up in the back office (Promotions) and applied by the till by
 - **Figures:** each promotion shows its uses and the discount given; bills and receipts list the
   promotions used. Hand discounts stay in the audit log as before; promotions do not.
 
+### Loyalty, gift cards and store credit
+
+Back office, **Loyalty & gift cards** (`#/loyalty`), and on the till the **Gift card** button and the
+Gift card and Points payment methods.
+
+- **Points:** earned on sales with a customer on them, at the rate the owner sets (points for each AED 1,
+  points that pay AED 1, fewest points spent at once). The server works points out when the sale syncs,
+  on what was bought less what points paid for; gift cards bought earn none. A refund takes back earned
+  points in proportion to the goods returned, and gives back points that were spent.
+- **Points are a payment, not a discount,** so VAT stays on the full price. The till checks the customer's
+  balance online before spending; the points come off when the sale syncs, and an overdraw is written to
+  the audit log rather than refused (the customer has already left).
+- **Gift cards:** sold at the till as a line with no VAT (a voucher is not a supply until it is spent),
+  offline too: the card is made or topped up when the sale syncs. Spending one needs the internet: the till
+  holds the amount on the server first, and lets go of it if the payment is removed. Back office can issue
+  cards, switch them off, change a balance with a note, and give back a hold that never became a sale
+  (after 15 minutes).
+- **Store credit** is a refund paid onto a gift card (a new number or the customer's own card).
+- **Books:** gift cards sold are credited to the gift card liability account, spending debits it, and
+  points spent go to the loyalty account. Gift card lines are left off the VAT return and e-invoices.
+- The demo data has a customer (Fatima Al Mansoori, 0501234567, 2,500 points) and a card `GIFT-DEMO-100`
+  with AED 100 on it. Migration `070_loyalty.sql`.
+
 ### New businesses and plans
 
 - **Sign-up:** *Start a free trial* on the back office sign-in page (`#/signup`). One form creates the
@@ -312,5 +335,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Real card terminal providers, online subscription billing, loyalty, gift cards and store credit, web push for the owner app, purchasing,
+Real card terminal providers, online subscription billing, loyalty tiers, web push for the owner app, purchasing,
 Windows/Android packaging. See the roadmap in the PRD.

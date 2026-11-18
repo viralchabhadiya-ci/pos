@@ -97,6 +97,60 @@ export interface Customer {
   orders?: number;
   spent?: number;
   lastVisit?: string | null;
+  points?: number;
+}
+
+export interface LoyaltySettings {
+  enabled: boolean;
+  pointsPerAed: number;
+  pointValueFils: number;
+  minRedeemPoints: number;
+}
+export interface LoyaltyOverview {
+  settings: LoyaltySettings;
+  stats: {
+    pointsOutstanding: number;
+    pointsValue: number;
+    members: number;
+    earned30: number;
+    redeemed30: number;
+    giftCardBalance: number;
+    giftCardsLive: number;
+  };
+}
+export interface GiftCard {
+  id: string;
+  code: string;
+  status: "active" | "disabled";
+  balance: number;
+  loaded: number;
+  expiresAt: string | null;
+  note: string | null;
+  createdAt: string;
+  customerId: string | null;
+  customerName: string | null;
+  lastUsed?: string | null;
+}
+export interface GiftCardDetail extends GiftCard {
+  customerPhone: string | null;
+  moves: {
+    id: string;
+    kind: string;
+    amount: number;
+    at: string;
+    note: string | null;
+    orderId: string | null;
+    orderNumber: string | null;
+    storeName: string | null;
+    userName: string | null;
+    unclaimed: boolean;
+    releasable: boolean;
+  }[];
+}
+export interface CustomerLoyalty {
+  points: number;
+  moves: { id: string; kind: string; points: number; at: string; note: string | null; orderId: string | null; orderNumber: string | null; userName: string | null }[];
+  giftCards: { id: string; code: string; status: string; balance: number }[];
 }
 export interface AuditEntry {
   id: number;

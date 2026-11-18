@@ -12,6 +12,8 @@ export interface DayData {
   /** Order lines by sale/refund and VAT type. Refund amounts are negative, as stored. */
   supplies: { refund: boolean; kind: SupplyKind; rateBp: number; net: number; vat: number; lines: number }[];
   payments: { methodId: string; methodName: string; kind: string; amount: number; count: number }[];
+  /** Gift cards sold or topped up: money now owed to card holders, not a sale. */
+  giftCardsSold?: number;
   sales: number;
   refunds: number;
   /** Sum of order totals (net + VAT). */
@@ -105,6 +107,7 @@ export function buildJournal(day: DayData, config: AccountingConfig): Journal {
     if (s.kind === "none" && !s.refund) warnings.push(`${aed(s.net)} of sales were for products with no VAT type set.`);
   }
   add({ key: "vatOutput", account: acc.vatOutput, description: "VAT on sales less refunds", amount: -vat });
+  add({ key: "giftCards", account: acc.giftCards, description: "Gift cards sold", amount: -(day.giftCardsSold ?? 0) });
   add({ key: "rounding", account: acc.rounding, description: "Cash rounding", amount: -day.cashRounding });
 
   if (day.cashIn) add({ key: "cash", account: acc.cash, description: "Cash paid in", amount: day.cashIn });
@@ -146,7 +149,7 @@ const IN_RANGE = (col: string) =>
 /** Loads every store day with activity in the range, oldest first. */
 export async function loadDays(db: Db, tenantId: string, from: string, to: string, storeId: string | null): Promise<DayData[]> {
   const params = [tenantId, storeId, from, to];
-  const [supplies, payments, orders, closes, moves] = await Promise.all([
+  const [supplies, payments, orders, closes, moves, giftCards] = await Promise.all([
     db.query(
       `SELECT o.store_id, ${DAY("o.created_at")} AS day, o.refund_of_order_id IS NOT NULL AS refund,
               COALESCE(t.kind, CASE WHEN ol.tax_rate_bp > 0 THEN 'standard' ELSE 'none' END) AS kind,
@@ -154,7 +157,7 @@ export async function loadDays(db: Db, tenantId: string, from: string, to: strin
               COUNT(*)::int AS lines
          FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
          LEFT JOIN taxes t ON t.id = ol.tax_id
-        WHERE ${IN_RANGE("o.created_at")}
+        WHERE ${IN_RANGE("o.created_at")} AND ol.gift_card_code IS NULL
         GROUP BY 1, 2, 3, 4, 5 ORDER BY 3, 5 DESC, 4`,
       params,
     ),
@@ -193,6 +196,13 @@ export async function loadDays(db: Db, tenantId: string, from: string, to: strin
          FROM cash_moves cm JOIN sessions se ON se.id = cm.session_id JOIN registers r ON r.id = se.register_id
          JOIN stores s ON s.id = r.store_id
         WHERE ${IN_RANGE("cm.at")}
+        GROUP BY 1, 2`,
+      params,
+    ),
+    db.query(
+      `SELECT o.store_id, ${DAY("o.created_at")} AS day, SUM(ol.gross)::bigint AS sold
+         FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
+        WHERE ${IN_RANGE("o.created_at")} AND ol.gift_card_code IS NOT NULL
         GROUP BY 1, 2`,
       params,
     ),
@@ -252,6 +262,7 @@ export async function loadDays(db: Db, tenantId: string, from: string, to: strin
     d.cashRounding = Number(r.rounding);
   }
   for (const r of closes.rows) get(r.store_id, r.day).cashVariance = Number(r.variance);
+  for (const r of giftCards.rows) get(r.store_id, r.day).giftCardsSold = Number(r.sold);
   for (const r of moves.rows) {
     const d = get(r.store_id, r.day);
     d.cashIn = Number(r.cash_in);

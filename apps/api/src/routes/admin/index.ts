@@ -5,6 +5,7 @@ import { businessRoutes } from "./business.js";
 import { catalogRoutes } from "./catalog.js";
 import { deviceRoutes } from "./devices.js";
 import { einvoicingRoutes } from "./einvoicing.js";
+import { loyaltyRoutes } from "./loyalty.js";
 import { priceListRoutes } from "./priceLists.js";
 import { productCsvRoutes } from "./products-csv.js";
 import { ownerRoutes } from "./owner.js";
@@ -32,4 +33,5 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(promotionRoutes);
   await app.register(priceListRoutes);
   await app.register(accountingRoutes);
+  await app.register(loyaltyRoutes);
 }

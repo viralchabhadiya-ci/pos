@@ -22,6 +22,7 @@ export const CATALOG_KINDS = [
   "promotions",
   "priceLists",
   "priceListItems",
+  "loyalty",
 ] as const;
 export type CatalogKind = (typeof CATALOG_KINDS)[number];
 
@@ -65,7 +66,8 @@ export interface LocalOrder {
     orderDiscountBp?: number;
     lines: {
       id: string;
-      variantId: string;
+      variantId: string | null;
+      giftCardCode?: string;
       name: string;
       qty: number;
       unitPrice: number;
@@ -74,7 +76,8 @@ export interface LocalOrder {
       promotionId?: string | null;
       taxId: string | null;
     }[];
-    payments: { id: string; methodId: string; kind: string; amount: number }[];
+    customerId?: string | null;
+    payments: { id: string; methodId: string; kind: string; amount: number; points?: number }[];
     [key: string]: unknown;
   };
 }

@@ -15,7 +15,7 @@ export async function syncRoutes(app: FastifyInstance) {
     const params = [device.tenantId, since ?? "-infinity"];
     const q = (sql: string) => app.db.query(sql, params).then((r) => r.rows);
 
-    const [taxes, categories, products, variants, paymentMethods, users, stores, promotions, priceLists, priceListItems] = await Promise.all([
+    const [taxes, categories, products, variants, paymentMethods, users, stores, promotions, priceLists, priceListItems, loyalty] = await Promise.all([
       q(`SELECT id, name, rate_bp AS "rateBp", price_included AS "priceIncluded", kind, active
            FROM taxes WHERE tenant_id = $1 AND updated_at > $2`),
       q(`SELECT id, parent_id AS "parentId", name, name_ar AS "nameAr", sort, active
@@ -47,6 +47,10 @@ export async function syncRoutes(app: FastifyInstance) {
       q(`SELECT i.price_list_id || ':' || i.variant_id AS id, i.price_list_id AS "priceListId", i.variant_id AS "variantId",
                 i.price, i.active
            FROM price_list_items i WHERE i.tenant_id = $1 AND i.updated_at > $2`),
+      // The points programme, as one row keyed by the business, so a store hub caches it too.
+      q(`SELECT tenant_id AS id, enabled, points_per_aed AS "pointsPerAed", point_value_fils AS "pointValueFils",
+                min_redeem_points AS "minRedeemPoints"
+           FROM loyalty_settings WHERE tenant_id = $1 AND updated_at > $2`),
     ]);
     return {
       serverTime,
@@ -60,6 +64,7 @@ export async function syncRoutes(app: FastifyInstance) {
       promotions,
       priceLists,
       priceListItems,
+      loyalty,
       store: stores[0] ?? null,
     };
   });

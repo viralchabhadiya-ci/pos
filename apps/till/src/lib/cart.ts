@@ -24,6 +24,8 @@ export interface CartCustomer {
   name: string;
   phone: string | null;
   priceListId: string | null;
+  /** Points balance when the customer was picked (the till checks again before spending). */
+  points?: number;
 }
 
 export interface Cart {
@@ -35,6 +37,8 @@ export interface Cart {
   codes?: string[];
   /** Set when this cart returns items from an earlier sale. */
   refundOfOrderId: string | null;
+  /** On a refund: what the original sale took in points, the most that goes back as points. */
+  refundPointsRoom?: number;
 }
 
 export const emptyCart = (): Cart => ({ lines: [], orderDiscountBp: 0, customerId: null, refundOfOrderId: null });
@@ -45,6 +49,22 @@ export interface SellableItem {
   price: number;
   taxId: string | null;
   uom: "unit" | "kg";
+}
+
+/** Adds a line that sells (or tops up) a gift card: face value, no VAT, no discount. */
+export function addGiftCard(cart: Cart, code: string, amount: number, newId: () => string = () => crypto.randomUUID()): Cart {
+  const line: CartLine = {
+    id: newId(),
+    variantId: null,
+    giftCardCode: code.trim().toUpperCase(),
+    name: "Gift card",
+    unitPrice: amount,
+    qty: 1,
+    discountBp: 0,
+    taxId: null,
+    uom: "unit",
+  };
+  return { ...cart, lines: [...cart.lines, line] };
 }
 
 /** Scanning the same unit item again adds to its line; weighed items always get a new line. */
@@ -90,7 +110,7 @@ export const isManual = (l: CartLine) => !!l.discountBp || (l.listPrice !== unde
 export function repriceCart(cart: Cart, priceOf: (variantId: string) => number | undefined): Cart {
   let changed = false;
   const lines = cart.lines.map((l) => {
-    if (l.listPrice !== undefined && l.unitPrice !== l.listPrice) return l;
+    if (!l.variantId || (l.listPrice !== undefined && l.unitPrice !== l.listPrice)) return l;
     const price = priceOf(l.variantId);
     if (price === undefined || (price === l.unitPrice && price === l.listPrice)) return l;
     changed = true;
@@ -136,7 +156,7 @@ export function promoteCart(cart: Cart, env: PromoEnv, now = new Date()): Promot
   if (cart.refundOfOrderId) return { cart, applied: [], unknownCodes: [] };
   const res = applyPromotions(
     cart.lines.map((l) => {
-      const p = env.products.get(l.variantId);
+      const p = l.variantId ? env.products.get(l.variantId) : undefined;
       return {
         id: l.id,
         variantId: l.variantId,
@@ -145,7 +165,8 @@ export function promoteCart(cart: Cart, env: PromoEnv, now = new Date()): Promot
         unitPrice: l.unitPrice,
         qty: l.qty,
         uom: l.uom,
-        manual: isManual(l),
+        // Gift cards are money, not goods: never on promotion.
+        manual: isManual(l) || !!l.giftCardCode,
       };
     }),
     env.promotions,

@@ -66,7 +66,7 @@ export async function salesRoutes(app: FastifyInstance) {
       `SELECT o.id, o.number, o.created_at AS "createdAt", o.synced_at AS "syncedAt",
               o.amount_total AS "amountTotal", o.discount_total AS "discountTotal", o.subtotal_net AS "subtotalNet",
               o.tax_total AS "taxTotal", o.total, o.cash_rounding AS "cashRounding", o.order_discount_bp AS "orderDiscountBp",
-              o.totals_mismatch AS "totalsMismatch",
+              o.totals_mismatch AS "totalsMismatch", o.points_earned AS "pointsEarned",
               s.name AS "storeName", r.name AS "registerName", u.name AS "cashierName",
               c.name AS "customerName", c.phone AS "customerPhone",
               o.refund_of_order_id AS "refundOfId", ro.number AS "refundOfNumber",
@@ -85,13 +85,15 @@ export async function salesRoutes(app: FastifyInstance) {
     if (!order) throw notFound("Bill");
     const lines = await app.db.query(
       `SELECT line_no AS "lineNo", name, qty, unit_price AS "unitPrice", discount_bp AS "discountBp",
-              line_discount + promo_discount + order_discount AS discount, tax_rate_bp AS "taxRateBp", net, tax, gross, note
+              line_discount + promo_discount + order_discount AS discount, tax_rate_bp AS "taxRateBp", net, tax, gross, note,
+              gift_card_code AS "giftCardCode"
          FROM order_lines WHERE order_id = $1 ORDER BY line_no`,
       [order.id],
     );
     const payments = await app.db.query(
-      `SELECT p.kind, m.name, p.amount, p.tendered, p.change, p.reference
-         FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE p.order_id = $1`,
+      `SELECT p.kind, m.name, p.amount, p.tendered, p.change, p.reference, p.points, g.code AS "giftCardCode", g.id AS "giftCardId"
+         FROM payments p JOIN payment_methods m ON m.id = p.method_id LEFT JOIN gift_cards g ON g.id = p.gift_card_id
+        WHERE p.order_id = $1`,
       [order.id],
     );
     const promotions = await app.db.query(
@@ -134,7 +136,7 @@ export async function salesRoutes(app: FastifyInstance) {
         params,
       ),
       app.db.query(
-        `SELECT CASE WHEN p.kind = 'cash' THEN 'cash' ELSE 'card' END AS kind, SUM(p.amount)::int AS amount
+        `SELECT CASE WHEN p.kind IN ('card', 'card_manual') THEN 'card' ELSE p.kind END AS kind, SUM(p.amount)::int AS amount
            FROM payments p JOIN orders o ON o.id = p.order_id JOIN stores s ON s.id = o.store_id
           WHERE ${day} GROUP BY 1 ORDER BY 1`,
         params,
@@ -142,7 +144,7 @@ export async function salesRoutes(app: FastifyInstance) {
       app.db.query(
         `SELECT ol.variant_id AS "variantId", MAX(ol.name) AS name, SUM(ol.qty)::float AS qty, SUM(ol.gross)::int AS total
            FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
-          WHERE ${day} GROUP BY ol.variant_id HAVING SUM(ol.gross) > 0 ORDER BY total DESC LIMIT 5`,
+          WHERE ${day} AND ol.variant_id IS NOT NULL GROUP BY ol.variant_id HAVING SUM(ol.gross) > 0 ORDER BY total DESC LIMIT 5`,
         params,
       ),
       app.db.query(

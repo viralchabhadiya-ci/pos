@@ -1,3 +1,4 @@
+import { maskGiftCard } from "@pos/core";
 import type { Block, ReceiptDoc } from "@pos/escpos";
 import { request } from "./api.js";
 import { forPrinter } from "./raster.js";
@@ -9,7 +10,14 @@ import { money, qtyText } from "./format.js";
 /** "en": English labels. "bilingual": English and Arabic, as UAE shoppers expect. */
 export type ReceiptLang = "en" | "bilingual";
 
-const METHOD_AR: Record<string, string> = { cash: "نقدًا", card: "بطاقة", card_manual: "بطاقة" };
+const METHOD_AR: Record<string, string> = { cash: "نقدًا", card: "بطاقة", card_manual: "بطاقة", gift_card: "بطاقة هدية", points: "نقاط" };
+
+/** How a payment shows on a receipt: the method, plus the end of a gift card's number or the points. */
+export function paymentLabel(name: string, p: { giftCardCode?: string; points?: number }): string {
+  if (p.giftCardCode) return `${name} ${maskGiftCard(p.giftCardCode)}`;
+  if (p.points) return `${name} (${p.points} pts)`;
+  return name;
+}
 
 /**
  * The receipt as a printer-neutral document for the store hub's thermal printer. It carries
@@ -58,7 +66,8 @@ export function receiptDoc(
     const uom = Number.isInteger(l.qty) ? "unit" : "kg";
     const off = l.lineDiscount + (l.promoDiscount ?? 0);
     const discount = off ? ` (-${money(Math.abs(off))})` : "";
-    blocks.push({ type: "text", text: l.name });
+    blocks.push({ type: "text", text: l.giftCardCode ? `${l.name} ${maskGiftCard(l.giftCardCode)}` : l.name });
+    if (l.giftCardCode) blocks.push({ type: "text", text: `  ${L("Outside the scope of VAT", "خارج نطاق الضريبة")}` });
     const nameAr = ar ? opts.arabicNames?.get(variants.get(l.id) ?? "") : null;
     if (nameAr) blocks.push({ type: "text", text: nameAr });
     blocks.push({ type: "row", left: `  ${qtyText(Math.abs(l.qty), uom)} x ${money(l.unitPrice)}${discount}`, right: money(l.gross) });
@@ -83,9 +92,11 @@ export function receiptDoc(
   blocks.push({ type: "rule" });
   for (const p of order.payments) {
     const name = opts.methods.find((m) => m.id === p.methodId)?.name ?? p.kind;
-    blocks.push({ type: "row", left: ar && METHOD_AR[p.kind] ? L(name, METHOD_AR[p.kind]!) : name, right: money(p.tendered ?? p.amount) });
+    const label = paymentLabel(ar && METHOD_AR[p.kind] ? L(name, METHOD_AR[p.kind]!) : name, p);
+    blocks.push({ type: "row", left: label, right: money(p.tendered ?? p.amount) });
   }
   if (order.payment.change > 0) blocks.push({ type: "row", left: L("Change", "الباقي"), right: money(order.payment.change) });
+  if (order.pointsEarned) blocks.push({ type: "text", text: L(`Points earned: ${order.pointsEarned}`, `نقاط مكتسبة: ${order.pointsEarned}`), align: "center" });
   if (setup.store.receiptFooter) {
     blocks.push({ type: "feed" });
     // "|" in the footer starts a new line (e.g. English | Arabic).
@@ -117,7 +128,7 @@ export function shiftReportDoc(
 ): ReceiptDoc {
   const fmt = (d: Date | string) =>
     new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeStyle: "short", timeZone: setup.store.timezone }).format(new Date(d));
-  const label: Record<string, string> = { cash: "Cash", card: "Card", card_manual: "Card (manual)" };
+  const label: Record<string, string> = { cash: "Cash", card: "Card", card_manual: "Card (manual)", gift_card: "Gift card", points: "Points" };
   const blocks: Block[] = [
     { type: "text", text: setup.store.name, align: "center", bold: true },
     { type: "text", text: `${opts.kind} REPORT`, align: "center", bold: true, double: true },

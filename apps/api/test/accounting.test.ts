@@ -187,7 +187,7 @@ describe("accounting export API", () => {
 
   it("saves the owner's accounts and uses them, including a per-method account", async () => {
     const s = await ok("GET", "/accounting/settings");
-    expect(s.methods.length).toBe(3);
+    expect(s.methods.length).toBe(5);
     const card = s.methods.find((m: { kind: string }) => m.kind === "card");
     const config = {
       ...s.config,

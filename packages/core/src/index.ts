@@ -5,3 +5,4 @@ export * from "./receipt.js";
 export * from "./schemas.js";
 export * from "./display.js";
 export * from "./promotions.js";
+export * from "./loyalty.js";
