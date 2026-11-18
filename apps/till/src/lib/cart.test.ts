@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addCode,
+  addGiftCard,
   addItem,
   cartTotals,
   emptyCart,
@@ -107,6 +108,21 @@ describe("price lists and promotions in the cart", () => {
     const manual = updateLine(cart, cart.lines[0]!.id, { discountBp: 500 });
     expect(promoteCart(manual, env).applied.map((a) => a.promotionId)).toEqual([]);
     expect(removeCode(cart, "EID").codes).toEqual([]);
+  });
+
+  it("sells a gift card at face value: no promotion, no discount, no VAT", () => {
+    const cart = addCode(addGiftCard(addItem(emptyCart(), water, 3, id), " gift-1234 ", 5000, id), "EID");
+    expect(cart.lines[1]).toMatchObject({ variantId: null, giftCardCode: "GIFT-1234", taxId: null, qty: 1 });
+    const promoted = promoteCart(cart, env);
+    expect(promoted.cart.lines[1]!.promoDiscount).toBe(0);
+    const totals = cartTotals(promoted.cart, { vat });
+    expect(totals.total).toBe(360 + 5000);
+    expect(totals.lines[1]).toMatchObject({ gross: 5000, tax: 0 });
+    // A discount on the whole sale leaves the gift card alone.
+    const off = cartTotals({ ...cart, orderDiscountBp: 1000 }, { vat });
+    expect(off.lines[1]).toMatchObject({ orderDiscount: 0, gross: 5000 });
+    expect(off.lines[0]!.orderDiscount).toBe(45);
+    expect(repriceCart(cart, () => 1)).toMatchObject({ lines: [{ unitPrice: 1 }, { unitPrice: 5000 }] });
   });
 
   it("leaves a refund's promotion share as the original sale gave it", () => {

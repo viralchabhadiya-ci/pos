@@ -201,13 +201,15 @@ function Hourly({ data }: { data: Data }) {
 }
 
 function Payments({ data }: { data: Data }) {
-  const cash = data.payments.find((p) => p.kind === "cash")?.amount ?? 0;
-  const card = data.payments.find((p) => p.kind === "card")?.amount ?? 0;
-  const sum = Math.max(cash, 0) + Math.max(card, 0);
+  const of = (kind: string) => data.payments.find((p) => p.kind === kind)?.amount ?? 0;
+  // Gift cards and points show only on days they were used.
   const rows = [
-    { label: "Cash", icon: "cash" as const, amount: cash },
-    { label: "Card", icon: "card" as const, amount: card },
-  ];
+    { label: "Cash", icon: "cash" as const, amount: of("cash") },
+    { label: "Card", icon: "card" as const, amount: of("card") },
+    { label: "Gift cards", icon: "gift" as const, amount: of("gift_card") },
+    { label: "Points", icon: "star" as const, amount: of("points") },
+  ].filter((r, i) => i < 2 || r.amount !== 0);
+  const sum = rows.reduce((n, r) => n + Math.max(r.amount, 0), 0);
   return (
     <ul className="split">
       {rows.map((r) => {

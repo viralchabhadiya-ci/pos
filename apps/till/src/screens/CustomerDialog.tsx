@@ -10,9 +10,16 @@ interface Found {
   name: string;
   phone: string | null;
   priceListId?: string | null;
+  points?: number;
 }
 
-const toCustomer = (c: Found): CartCustomer => ({ id: c.id, name: c.name, phone: c.phone ?? null, priceListId: c.priceListId ?? null });
+const toCustomer = (c: Found): CartCustomer => ({
+  id: c.id,
+  name: c.name,
+  phone: c.phone ?? null,
+  priceListId: c.priceListId ?? null,
+  ...(c.points !== undefined ? { points: c.points } : {}),
+});
 
 /**
  * Puts a customer on the sale: found by name or the last digits of their phone, or added
@@ -65,7 +72,7 @@ export function CustomerDialog({
     const c = { id: crypto.randomUUID(), name: name.trim(), phone: phone.trim() || null };
     try {
       await request("/customers", { body: { id: c.id, name: c.name, ...(c.phone ? { phone: c.phone } : {}) } });
-      onPick({ ...c, priceListId: null });
+      onPick({ ...c, priceListId: null, points: 0 });
     } catch (err) {
       setError(err instanceof OfflineError ? t("Adding a customer needs the connection.") : (err as Error).message);
       setBusy(false);
@@ -95,6 +102,7 @@ export function CustomerDialog({
               <li key={c.id}>
                 <button type="button" className="pick" onClick={() => onPick(toCustomer(c))}>
                   <strong>{c.name}</strong>
+                  {!!c.points && <small className="muted">{t("{n} pts", { n: c.points })}</small>}
                   {c.phone && (
                     <small className="muted">
                       <bdi>{c.phone}</bdi>

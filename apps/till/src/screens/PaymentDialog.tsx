@@ -2,6 +2,10 @@ import { checkPayments, type AppliedPromotion, type PaymentInput } from "@pos/co
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState } from "react";
 import { CardPanel } from "../components/CardPanel.js";
+import { StoredValuePanel } from "../components/StoredValuePanel.js";
+import { giftCardError, releaseGiftCard } from "../lib/giftCards.js";
+import { useLoyalty } from "../lib/loyalty.js";
+import { paymentLabel } from "../lib/print.js";
 import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
 import type { Cart } from "../lib/cart.js";
@@ -41,6 +45,13 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
   const [orderId] = useState(() => crypto.randomUUID());
   const [terminal, setTerminal] = useState<{ terminal: Terminal | null; online: boolean } | null>(null);
   const [card, setCard] = useState<{ method: PaymentMethod; amount: number; refundOf?: string } | null>(null);
+  // Gift card or points being added.
+  const [stored, setStored] = useState<PaymentMethod | null>(null);
+  const loyalty = useLoyalty();
+  const pointsRefunded = payments.reduce((s, p) => s + (p.kind === "points" && p.amount < 0 ? -p.amount : 0), 0);
+  const pointsRoom = Math.max(0, (cart.refundPointsRoom ?? 0) - pointsRefunded);
+  // Points show while the programme is on, and on a refund of a sale paid with points.
+  const shown = methods.filter((m) => m.kind !== "points" || (refund ? pointsRoom > 0 : loyalty.enabled));
 
   useEffect(() => {
     loadTerminal()
@@ -55,6 +66,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
 
   const addPayment = async (method: PaymentMethod, tenderedOverride?: number) => {
     setError(null);
+    if (method.kind === "gift_card" || method.kind === "points") return setStored(method);
     const remaining = method.kind === "cash" ? dueIfCash : check.remaining;
     const typed = entry ? tryParseMoney(entry) : null;
     const tendered = tenderedOverride ?? typed ?? remaining;
@@ -104,8 +116,33 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
     [card],
   );
 
-  const back = () => {
+  /** Removes a payment; an amount held on a gift card goes back to the card first. */
+  const removePayment = async (p: PaymentInput) => {
+    if (p.kind === "gift_card" && p.amount > 0) {
+      setBusy(true);
+      try {
+        await releaseGiftCard(p.id, cashierId);
+      } catch (err) {
+        setBusy(false);
+        return setError(giftCardError(err));
+      }
+      setBusy(false);
+    }
+    setPayments((list) => list.filter((x) => x.id !== p.id));
+  };
+
+  const back = async () => {
     if (cardPaid) return setError(t("A card payment went through. Complete the sale; to undo it, refund it to the card afterwards."));
+    const held = payments.filter((p) => p.kind === "gift_card" && p.amount > 0);
+    if (held.length) {
+      setBusy(true);
+      try {
+        for (const p of held) await releaseGiftCard(p.id, cashierId);
+      } catch (err) {
+        setBusy(false);
+        return setError(`${giftCardError(err)} ${t("The gift card amount is still held; remove it again when back online.")}`);
+      }
+    }
     onCancel();
   };
 
@@ -120,7 +157,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
   };
 
   return (
-    <Modal onClose={busy || card ? undefined : back} wide label={t(refund ? "Refund" : "Payment")}>
+    <Modal onClose={busy || card || stored ? undefined : () => void back()} wide label={t(refund ? "Refund" : "Payment")}>
       {card && terminal?.terminal && (
         <CardPanel
           terminal={terminal.terminal}
@@ -144,8 +181,8 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
           <ul className="paylist">
             {payments.map((p) => (
               <li key={p.id}>
-                <Icon name={p.kind === "cash" ? "cash" : "card"} />
-                <span>{t(methods.find((m) => m.id === p.methodId)?.name ?? "")}</span>
+                <Icon name={p.kind === "cash" ? "cash" : p.kind === "gift_card" ? "gift" : p.kind === "points" ? "star" : "card"} />
+                <span>{paymentLabel(t(methods.find((m) => m.id === p.methodId)?.name ?? ""), p)}</span>
                 <span className="amt">{money(p.amount)}</span>
                 {p.cardTransactionId ? (
                   // A terminal payment has charged the card; it can only be refunded, not removed.
@@ -155,7 +192,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
                     type="button"
                     className="icon-btn"
                     aria-label={t("Remove {method} {amount}", { method: t(methods.find((m) => m.id === p.methodId)?.name ?? ""), amount: money(p.amount) })}
-                    onClick={() => setPayments(payments.filter((x) => x.id !== p.id))}
+                    onClick={() => void removePayment(p)}
                     disabled={busy}
                   >
                     <Icon name="close" />
@@ -177,7 +214,23 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
           )}
         </div>
         <div>
-          {!check.complete && (
+          {!check.complete && stored && (
+            <StoredValuePanel
+              kind={stored.kind === "points" ? "points" : "gift_card"}
+              method={stored}
+              refund={refund}
+              remaining={Math.abs(check.remaining)}
+              customerId={cart.customerId}
+              pointsRoom={pointsRoom}
+              userId={cashierId}
+              onAdd={(p) => {
+                setPayments((list) => [...list, p]);
+                setStored(null);
+              }}
+              onCancel={() => setStored(null)}
+            />
+          )}
+          {!check.complete && !stored && (
             <>
               <label htmlFor="tendered">{t(refund ? "Refund amount" : "Amount received")}</label>
               <input
@@ -207,9 +260,9 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
                 </div>
               )}
               <div className="methods">
-                {methods.map((m) => (
+                {shown.map((m) => (
                   <button key={m.id} type="button" className="btn method" onClick={() => void addPayment(m)}>
-                    <Icon name={m.kind === "cash" ? "cash" : "card"} />
+                    <Icon name={m.kind === "cash" ? "cash" : m.kind === "gift_card" ? "gift" : m.kind === "points" ? "star" : "card"} />
                     {t(m.name)}
                     {m.kind === "card" && terminal?.terminal && <span className="method-note">{t("on {terminal}", { terminal: terminal.terminal.name })}</span>}
                   </button>
@@ -217,15 +270,17 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
               </div>
             </>
           )}
-          <div className="actions">
-            <button type="button" className="btn ghost" onClick={back} disabled={busy}>
-              {t("Back")}
-            </button>
-            <button type="button" className="btn primary lg" disabled={!check.complete || busy} onClick={finish} autoFocus={check.complete}>
-              <Icon name="check" />
-              {busy ? t("Saving…") : t(refund ? "Complete refund" : "Complete sale")}
-            </button>
-          </div>
+          {!(stored && !check.complete) && (
+            <div className="actions">
+              <button type="button" className="btn ghost" onClick={() => void back()} disabled={busy}>
+                {t("Back")}
+              </button>
+              <button type="button" className="btn primary lg" disabled={!check.complete || busy} onClick={finish} autoFocus={check.complete}>
+                <Icon name="check" />
+                {busy ? t("Saving…") : t(refund ? "Complete refund" : "Complete sale")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

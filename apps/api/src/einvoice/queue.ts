@@ -109,7 +109,7 @@ export async function loadDocument(db: Db, einvoiceId: string, settings: EInvoic
        JOIN variants v ON v.id = l.variant_id
        JOIN products p ON p.id = v.product_id
        LEFT JOIN taxes tx ON tx.id = l.tax_id
-      WHERE l.order_id = $1 ORDER BY l.line_no`,
+      WHERE l.order_id = $1 AND l.gift_card_code IS NULL ORDER BY l.line_no`,
     [r.orderId],
   );
   const payments = await db.query("SELECT DISTINCT kind FROM payments WHERE order_id = $1 ORDER BY kind", [r.orderId]);
@@ -131,10 +131,16 @@ export async function loadDocument(db: Db, einvoiceId: string, settings: EInvoic
   const b2b = !!r.customerTrn;
   let inScope = settings.scope === "all" || b2b;
   let scopeReason = b2b ? "" : "Walk-in bill. Only bills for customers with a TRN are sent.";
+  // Selling a gift card is not a supply for VAT (the goods are taxed when the card is spent), so
+  // gift card lines stay off the invoice, and a bill of only gift cards has no invoice at all.
   // A refund of an invoice that was sent must be sent too, so the FTA sees both.
   if (credit && !inScope && r.originalStatus && r.originalStatus !== "skipped") {
     inScope = true;
     scopeReason = "";
+  }
+  if (!docLines.length) {
+    inScope = false;
+    scopeReason = "Only gift cards on this bill. Selling a gift card is not a supply for VAT.";
   }
 
   const doc: PintDocument = {

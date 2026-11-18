@@ -11,7 +11,10 @@ export interface TaxRate {
 
 export interface LineInput {
   id: string;
-  variantId: string;
+  /** The product sold; null only on a gift card line, which sells stored value, not goods. */
+  variantId: string | null;
+  /** Set on a line that sells or tops up a gift card. It takes no discount or promotion. */
+  giftCardCode?: string;
   name: string;
   /** Unit price in minor units, as stored on the product (tax-inclusive or not, per its tax). */
   unitPrice: number;
@@ -80,9 +83,10 @@ export function normalizeQty(qty: number): number {
  */
 export function priceOrder(inputs: LineInput[], ctx: PricingContext): OrderTotals {
   const amounts = inputs.map((l) => mulDiv(l.unitPrice, Math.round(normalizeQty(l.qty) * QTY_SCALE), QTY_SCALE));
-  const lineDiscounts = inputs.map((l, i) => mulDiv(amounts[i]!, l.discountBp ?? 0, 10_000));
+  // Gift card lines sell money at face value, so no discount ever touches them.
+  const lineDiscounts = inputs.map((l, i) => (l.giftCardCode ? 0 : mulDiv(amounts[i]!, l.discountBp ?? 0, 10_000)));
   const promos = inputs.map((l, i) => {
-    const p = l.promoDiscount ?? 0;
+    const p = l.giftCardCode ? 0 : (l.promoDiscount ?? 0);
     const room = amounts[i]! - lineDiscounts[i]!;
     // A promotion never takes a line below zero, nor flips its sign.
     if (p === 0 || room === 0 || Math.sign(p) !== Math.sign(room)) return 0;
@@ -90,12 +94,13 @@ export function priceOrder(inputs: LineInput[], ctx: PricingContext): OrderTotal
   });
   const afterLine = amounts.map((a, i) => a - lineDiscounts[i]! - promos[i]!);
 
+  const discountable = afterLine.map((a, i) => (inputs[i]!.giftCardCode ? 0 : a));
   const orderDiscountTotal = mulDiv(
-    afterLine.reduce((s, a) => s + a, 0),
+    discountable.reduce((s, a) => s + a, 0),
     ctx.orderDiscountBp ?? 0,
     10_000,
   );
-  const orderDiscounts = allocate(orderDiscountTotal, afterLine);
+  const orderDiscounts = allocate(orderDiscountTotal, discountable);
 
   const lines: PricedLine[] = inputs.map((l, i) => {
     const priced = afterLine[i]! - orderDiscounts[i]!;

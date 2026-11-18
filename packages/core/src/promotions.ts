@@ -56,7 +56,7 @@ export interface Promotion {
 
 export interface PromoLine {
   id: string;
-  variantId: string;
+  variantId: string | null;
   productId: string | null;
   categoryId: string | null;
   unitPrice: number;

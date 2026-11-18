@@ -33,7 +33,7 @@ export async function reportRoutes(app: FastifyInstance) {
     const top = await app.db.query(
       `SELECT ol.variant_id AS "variantId", MAX(ol.name) AS name, SUM(ol.qty) AS qty, SUM(ol.gross)::int AS total
          FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
-        WHERE ${dayFilter} GROUP BY ol.variant_id ORDER BY total DESC LIMIT 10`,
+        WHERE ${dayFilter} AND ol.variant_id IS NOT NULL GROUP BY ol.variant_id ORDER BY total DESC LIMIT 10`,
       params,
     );
     return { date, ...totals.rows[0], payments: payments.rows, vat: vat.rows, topProducts: top.rows };

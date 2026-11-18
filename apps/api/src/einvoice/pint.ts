@@ -170,8 +170,9 @@ export function buildPintXml(doc: PintDocument): string {
 
   for (const kind of [...new Set(doc.paymentKinds)]) {
     x.open("cac:PaymentMeans");
-    // UNCL4461: 10 cash, 48 bank card.
-    x.el("cbc:PaymentMeansCode", kind === "cash" ? "10" : "48", { name: kind === "cash" ? "Cash" : "Card" });
+    // UNCL4461: 10 cash, 48 bank card, ZZZ agreed between the parties (gift card, points).
+    const [code, name] = kind === "cash" ? ["10", "Cash"] : kind === "gift_card" ? ["ZZZ", "Gift card"] : kind === "points" ? ["ZZZ", "Loyalty points"] : ["48", "Card"];
+    x.el("cbc:PaymentMeansCode", code, { name });
     x.close("cac:PaymentMeans");
   }
 

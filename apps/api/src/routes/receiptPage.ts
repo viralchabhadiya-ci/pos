@@ -1,4 +1,4 @@
-import { formatMoney } from "@pos/core";
+import { formatMoney, maskGiftCard } from "@pos/core";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -36,11 +36,14 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     }
     const lines = await app.db.query("SELECT * FROM order_lines WHERE order_id = $1 ORDER BY line_no", [o.id]);
     const pays = await app.db.query(
-      "SELECT p.amount, p.tendered, p.change, m.name FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE p.order_id = $1",
+      `SELECT p.amount, p.tendered, p.change, p.points, m.name, g.code AS gift_card
+         FROM payments p JOIN payment_methods m ON m.id = p.method_id LEFT JOIN gift_cards g ON g.id = p.gift_card_id
+        WHERE p.order_id = $1`,
       [o.id],
     );
     const vat = await app.db.query(
-      "SELECT tax_rate_bp, SUM(net)::int AS net, SUM(tax)::int AS tax FROM order_lines WHERE order_id = $1 GROUP BY tax_rate_bp ORDER BY tax_rate_bp",
+      `SELECT tax_rate_bp, SUM(net)::int AS net, SUM(tax)::int AS tax FROM order_lines
+        WHERE order_id = $1 AND gift_card_code IS NULL GROUP BY tax_rate_bp ORDER BY tax_rate_bp`,
       [o.id],
     );
     const promos = await app.db.query(
@@ -74,7 +77,9 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     <tbody>${lines.rows
       .map(
         (l) =>
-          `<tr><td>${esc(l.name)}${l.note ? `<br><small class="muted">${esc(l.note)}</small>` : ""}<br><small class="muted">${m(l.unit_price)} each${
+          `<tr><td>${esc(l.name)}${l.note ? `<br><small class="muted">${esc(l.note)}</small>` : ""}${
+            l.gift_card_code ? `<br><small class="muted">Card ${esc(maskGiftCard(l.gift_card_code))} · outside the scope of VAT</small>` : ""
+          }<br><small class="muted">${m(l.unit_price)} each${
             l.line_discount + l.promo_discount + l.order_discount ? ` · discount ${m(Math.abs(l.line_discount + l.promo_discount + l.order_discount))}` : ""
           }</small></td><td class="n">${qty(l.qty)}</td><td class="n">${m(l.gross)}</td></tr>`,
       )
@@ -88,8 +93,14 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     ${o.cash_rounding ? `<dt>Cash rounding</dt><dd>${m(o.cash_rounding)}</dd>` : ""}
   </dl>
   <dl class="pays">${pays.rows
-    .map((p) => `<dt>${esc(p.name)}</dt><dd>${m(p.tendered ?? p.amount)}${p.change ? ` · change ${m(p.change)}` : ""}</dd>`)
+    .map(
+      (p) =>
+        `<dt>${esc(p.name)}${p.gift_card ? ` ${esc(maskGiftCard(p.gift_card))}` : ""}${p.points ? ` (${p.points} pts)` : ""}</dt><dd>${m(
+          p.tendered ?? p.amount,
+        )}${p.change ? ` · change ${m(p.change)}` : ""}</dd>`,
+    )
     .join("")}</dl>
+  ${o.points_earned ? `<p class="foot">You earned ${o.points_earned} points on this bill · ربحت ${o.points_earned} نقطة</p>` : ""}
   ${o.receipt_footer ? `<p class="foot">${String(o.receipt_footer).split("|").map((l: string) => esc(l.trim())).filter(Boolean).join("<br>")}</p>` : ""}
 </main>`;
     return page(`${refund ? "Credit note" : "Receipt"} ${o.number}`, body);

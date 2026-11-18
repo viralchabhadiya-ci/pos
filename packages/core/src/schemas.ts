@@ -2,9 +2,19 @@ import { z } from "zod";
 
 /** Wire format shared by the till and the API. Amounts are integer minor units. */
 
+/** A gift card number: what a printed card's barcode holds, or one the till made up. Upper case. */
+export const GiftCardCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9-]{6,40}$/, "Gift card numbers are 6 to 40 letters, digits or dashes");
+
 export const OrderLineSchema = z.object({
   id: z.string().uuid(),
-  variantId: z.string().uuid(),
+  /** The product sold; null only on a line that sells or tops up a gift card. */
+  variantId: z.string().uuid().nullable(),
+  /** Set on a line that loads a gift card: no VAT, no discount, no stock. */
+  giftCardCode: GiftCardCodeSchema.optional(),
   name: z.string().min(1).max(200),
   qty: z.number().finite().refine((q) => q !== 0, "qty must not be zero"),
   unitPrice: z.number().int(),
@@ -19,12 +29,16 @@ export const OrderLineSchema = z.object({
 export const PaymentSchema = z.object({
   id: z.string().uuid(),
   methodId: z.string().uuid(),
-  kind: z.enum(["cash", "card", "card_manual"]),
+  kind: z.enum(["cash", "card", "card_manual", "gift_card", "points"]),
   amount: z.number().int(),
   tendered: z.number().int().optional(),
   reference: z.string().max(100).optional(),
   /** The integrated terminal's card payment that paid this, when there is one. */
   cardTransactionId: z.string().uuid().optional(),
+  /** The gift card paid with, or refunded onto. */
+  giftCardCode: GiftCardCodeSchema.optional(),
+  /** Loyalty points spent (or given back by a refund) on a points payment. Always positive. */
+  points: z.number().int().positive().optional(),
 });
 
 export const OrderSyncSchema = z.object({

@@ -24,7 +24,7 @@ export interface Variant {
   price: number;
   active: boolean;
 }
-export interface PaymentMethod { id: string; name: string; kind: "cash" | "card" | "card_manual"; active: boolean }
+export interface PaymentMethod { id: string; name: string; kind: "cash" | "card" | "card_manual" | "gift_card" | "points"; active: boolean }
 export interface User { id: string; name: string; role: "cashier" | "manager" | "owner"; pinSalt: string; pinHash: string; active: boolean }
 export interface PriceList { id: string; name: string; active: boolean }
 /** id is "priceListId:variantId". */
@@ -84,6 +84,8 @@ export interface LocalOrder extends OrderSync {
   payment: PaymentCheck;
   syncStatus: "pending" | "synced" | "rejected";
   syncError?: string;
+  /** Points the customer earns, as the till works it out for the receipt (the server books them). */
+  pointsEarned?: number;
 }
 
 export type OutboxKind = "session.open" | "cash.move" | "order" | "session.close";

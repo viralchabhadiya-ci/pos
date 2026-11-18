@@ -73,7 +73,7 @@ export async function businessRoutes(app: FastifyInstance) {
     }
     const count = await app.db.query(`SELECT COUNT(*)::int AS n FROM customers c WHERE ${where}`, params);
     const { rows } = await app.db.query(
-      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName", st.orders, st.spent, st."lastVisit"
+      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName", c.points, st.orders, st.spent, st."lastVisit"
          FROM customers c
          JOIN LATERAL (SELECT COUNT(*) FILTER (WHERE o.refund_of_order_id IS NULL)::int AS orders,
                               COALESCE(SUM(o.total), 0)::int AS spent, MAX(o.created_at) AS "lastVisit"
@@ -88,7 +88,7 @@ export async function businessRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/customers/:id", async (req) => {
     const ctx = await app.authAdmin(req);
     const { rows } = await app.db.query(
-      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName"
+      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName", c.points
          FROM customers c LEFT JOIN price_lists pl ON pl.id = c.price_list_id WHERE c.id = $1 AND c.tenant_id = $2`,
       [req.params.id, ctx.tenantId],
     );

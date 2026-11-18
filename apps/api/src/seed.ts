@@ -15,6 +15,8 @@ export interface SeedResult {
   vatId: string;
   cashMethodId: string;
   cardMethodId: string;
+  giftCardMethodId: string;
+  pointsMethodId: string;
   variants: { id: string; name: string; price: number; barcode: string }[];
 }
 
@@ -38,7 +40,15 @@ const PRODUCTS: [category: string, name: string, nameAr: string, price: number, 
 /** Demo data for a Dubai minimart: one store, one register, VAT 5% included in prices. */
 export async function seed(
   db: Db,
-  opts: { cashierPin?: string; managerPin?: string; ownerPin?: string; ownerEmail?: string; ownerPassword?: string } = {},
+  opts: {
+    cashierPin?: string;
+    managerPin?: string;
+    ownerPin?: string;
+    ownerEmail?: string;
+    ownerPassword?: string;
+    /** A demo customer with points and a demo gift card, for trying the till by hand. */
+    demoCustomers?: boolean;
+  } = {},
 ): Promise<SeedResult> {
   return withTx(db, async (tx) => {
     const tenantId = randomUUID();
@@ -51,6 +61,8 @@ export async function seed(
     const cashMethodId = randomUUID();
     const cardMethodId = randomUUID();
     const manualCardId = randomUUID();
+    const giftCardMethodId = randomUUID();
+    const pointsMethodId = randomUUID();
 
     await tx.query("INSERT INTO tenants (id, name) VALUES ($1, 'Demo Minimart LLC')", [tenantId]);
     await tx.query(
@@ -90,9 +102,12 @@ export async function seed(
     );
     await tx.query(
       `INSERT INTO payment_methods (id, tenant_id, name, kind) VALUES
-         ($1, $4, 'Cash', 'cash'), ($2, $4, 'Card', 'card'), ($3, $4, 'Card (manual terminal)', 'card_manual')`,
-      [cashMethodId, cardMethodId, manualCardId, tenantId],
+         ($1, $4, 'Cash', 'cash'), ($2, $4, 'Card', 'card'), ($3, $4, 'Card (manual terminal)', 'card_manual'),
+         ($5, $4, 'Gift card', 'gift_card'), ($6, $4, 'Points', 'points')`,
+      [cashMethodId, cardMethodId, manualCardId, tenantId, giftCardMethodId, pointsMethodId],
     );
+    // Points on: 1 point per AED 1 spent, 100 points pay AED 1.
+    await tx.query("INSERT INTO loyalty_settings (tenant_id, enabled) VALUES ($1, true)", [tenantId]);
 
     const categoryIds = new Map<string, string>();
     let sort = 0;
@@ -124,6 +139,26 @@ export async function seed(
       variants.push({ id: variantId, name, price, barcode });
     }
 
+    if (opts.demoCustomers) {
+      const customerId = randomUUID();
+      await tx.query("INSERT INTO customers (id, tenant_id, name, phone, points) VALUES ($1, $2, 'Fatima Al Mansoori', '0501234567', 2500)", [
+        customerId,
+        tenantId,
+      ]);
+      await tx.query("INSERT INTO loyalty_moves (tenant_id, customer_id, points, kind, note) VALUES ($1, $2, 2500, 'adjust', 'Welcome points')", [
+        tenantId,
+        customerId,
+      ]);
+      const card = await tx.query(
+        "INSERT INTO gift_cards (tenant_id, code, balance, loaded, note) VALUES ($1, 'GIFT-DEMO-100', 10000, 10000, 'Demo card') RETURNING id",
+        [tenantId],
+      );
+      await tx.query("INSERT INTO gift_card_moves (tenant_id, gift_card_id, amount, kind, note) VALUES ($1, $2, 10000, 'issue', 'Demo card')", [
+        tenantId,
+        card.rows[0].id,
+      ]);
+    }
+
     return {
       tenantId,
       storeId,
@@ -136,6 +171,8 @@ export async function seed(
       vatId,
       cashMethodId,
       cardMethodId,
+      giftCardMethodId,
+      pointsMethodId,
       variants,
     };
   });

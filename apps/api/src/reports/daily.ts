@@ -73,7 +73,7 @@ export async function buildDailySummary(db: Db, tenantId: string, date: string):
     db.query(
       `SELECT MAX(ol.name) AS name, SUM(ol.qty)::float AS qty, SUM(ol.gross)::int AS total
          FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
-        WHERE ${DAY} GROUP BY ol.variant_id HAVING SUM(ol.gross) > 0 ORDER BY total DESC, name LIMIT 5`,
+        WHERE ${DAY} AND ol.variant_id IS NOT NULL GROUP BY ol.variant_id HAVING SUM(ol.gross) > 0 ORDER BY total DESC, name LIMIT 5`,
       p,
     ),
     db.query(
