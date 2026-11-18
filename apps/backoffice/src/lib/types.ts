@@ -33,6 +33,8 @@ export interface Product {
   barcode: string | null;
   extraBarcodes: string[];
   sku: string | null;
+  /** The item code on the shop's scale. */
+  plu: string | null;
   reorderLevel: number | null;
   active: boolean;
   onHand: number;

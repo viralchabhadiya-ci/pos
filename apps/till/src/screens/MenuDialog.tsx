@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { ManagerPin } from "../components/ManagerPin.js";
+import { ScaleSetup } from "../components/ScaleSetup.js";
 import { Modal } from "../components/Modal.js";
 import type { DeviceSetup, Session, User } from "../lib/db.js";
 import { tryParseMoney } from "../lib/format.js";
@@ -25,6 +26,7 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drawerPin, setDrawerPin] = useState(false);
+  const [scaleSetup, setScaleSetup] = useState(false);
   const hasDrawer = !!useSyncStatus().hub?.printer;
   const [receiptLang, setReceiptLangState] = useState<ReceiptLang>(getReceiptLang);
   const changeReceiptLang = (lang: ReceiptLang) => {
@@ -69,6 +71,14 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
         onApprove={(managerId, approvalId) => void openDrawer(managerId, approvalId)}
         onCancel={() => setDrawerPin(false)}
       />
+    );
+  }
+
+  if (scaleSetup) {
+    return (
+      <Modal key="scale" onClose={() => setScaleSetup(false)} label={t("Scale")}>
+        <ScaleSetup onClose={() => setScaleSetup(false)} />
+      </Modal>
     );
   }
 
@@ -146,6 +156,10 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
               {t("Print X report")}
             </button>
           )}
+          <button type="button" className="btn block" onClick={() => setScaleSetup(true)}>
+            <Icon name="scale" />
+            {t("Scale")}
+          </button>
           <button type="button" className="btn block" onClick={openCustomerScreen}>
             <Icon name="monitor" />
             {t("Customer screen on this PC")}

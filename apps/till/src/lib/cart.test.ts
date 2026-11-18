@@ -1,5 +1,7 @@
+import { DEFAULT_SCALE_RULES, makeScaleBarcode, parseScaleBarcode } from "@pos/core";
 import { describe, expect, it } from "vitest";
 import {
+  addScaleItem,
   addCode,
   addGiftCard,
   addItem,
@@ -130,5 +132,30 @@ describe("price lists and promotions in the cart", () => {
     const res = promoteCart(refund, env);
     expect(res.cart).toBe(refund);
     expect(cartTotals(res.cart, { vat }).total).toBe(-133);
+  });
+});
+
+describe("scale labels", () => {
+  const weightRule = DEFAULT_SCALE_RULES[0]!;
+  const priceRule = DEFAULT_SCALE_RULES[1]!;
+
+  it("adds each weight label as its own line at the shelf price", () => {
+    const code = makeScaleBarcode(weightRule, "1", 1250);
+    let cart = addScaleItem(emptyCart(), banana, parseScaleBarcode(code, DEFAULT_SCALE_RULES)!, code, id)!;
+    cart = addScaleItem(cart, banana, parseScaleBarcode(code, DEFAULT_SCALE_RULES)!, code, id)!;
+    expect(cart.lines).toHaveLength(2);
+    expect(cart.lines[0]).toMatchObject({ qty: 1.25, unitPrice: 795, uom: "kg", scaleLabel: code });
+    expect(cartTotals(cart, { vat }).total).toBe(2 * 994);
+  });
+
+  it("keeps a price label's amount as printed", () => {
+    const code = makeScaleBarcode(priceRule, "1", 1000);
+    const cart = addScaleItem(emptyCart(), banana, parseScaleBarcode(code, DEFAULT_SCALE_RULES)!, code, id)!;
+    expect(cartTotals(cart, { vat }).total).toBe(1000);
+  });
+
+  it("refuses a weight label for an item sold by the piece", () => {
+    const code = makeScaleBarcode(weightRule, "9", 500);
+    expect(addScaleItem(emptyCart(), water, parseScaleBarcode(code, DEFAULT_SCALE_RULES)!, code, id)).toBeNull();
   });
 });

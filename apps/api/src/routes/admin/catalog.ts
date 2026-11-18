@@ -1,3 +1,4 @@
+import { normalizePlu } from "@pos/core";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -26,6 +27,13 @@ export const ProductSchema = z.object({
   /** More barcodes that ring up the same product, e.g. an old and a new pack. */
   extraBarcodes: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   sku: z.string().trim().max(64).nullish(),
+  /** The item code this product has on the shop's scale; scale labels carry it. Leading zeros do not count. */
+  plu: z
+    .string()
+    .trim()
+    .regex(/^\d{0,6}$/, "The scale item code is up to 6 digits")
+    .transform((v) => (v ? normalizePlu(v) : null))
+    .nullish(),
   /** Warn when stock is at or below this; null for no alert. */
   reorderLevel: z.number().min(0).max(1_000_000).nullish(),
   active: z.boolean().default(true),
@@ -53,7 +61,7 @@ const ListSchema = z.object({
 
 const PRODUCT_SELECT = `
   SELECT p.id, v.id AS "variantId", p.name, p.name_ar AS "nameAr", p.category_id AS "categoryId", c.name AS "categoryName",
-         p.uom, p.tax_id AS "taxId", v.price, v.cost, v.barcode, v.extra_barcodes AS "extraBarcodes", v.sku,
+         p.uom, p.tax_id AS "taxId", v.price, v.cost, v.barcode, v.extra_barcodes AS "extraBarcodes", v.sku, v.plu,
          v.reorder_level AS "reorderLevel", p.active, p.updated_at AS "updatedAt", oh.qty AS "onHand"
     FROM products p
     JOIN LATERAL (SELECT * FROM variants v WHERE v.product_id = p.id ORDER BY v.id LIMIT 1) v ON true
@@ -86,7 +94,10 @@ async function checkBarcodes(tx: Tx, tenantId: string, variantId: string | null,
   if (rows[0]) throw barcodeTaken(codes.find((c) => c === rows[0].barcode || rows[0].extra_barcodes.includes(c)));
 }
 
+export const pluTaken = () => new HttpError(409, "plu_taken", "Another product already has this scale item code");
+
 export function uniqueToBarcode(err: unknown): never {
+  if (isUniqueViolation(err, "variants_plu")) throw pluTaken();
   throw isUniqueViolation(err) ? barcodeTaken() : err;
 }
 
@@ -101,10 +112,10 @@ export async function saveProduct(tx: Tx, ctx: AdminContext, id: string | null, 
       [newId, ctx.tenantId, body.categoryId ?? null, body.name, empty(body.nameAr), body.uom, body.taxId ?? null, body.active],
     );
     await tx.query(
-      `INSERT INTO variants (id, tenant_id, product_id, sku, barcode, extra_barcodes, price, cost, reorder_level, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO variants (id, tenant_id, product_id, sku, barcode, extra_barcodes, price, cost, reorder_level, active, plu)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [randomUUID(), ctx.tenantId, newId, empty(body.sku), empty(body.barcode), body.extraBarcodes, body.price, body.cost ?? null,
-        body.reorderLevel ?? null, body.active],
+        body.reorderLevel ?? null, body.active, body.plu ?? null],
     );
     await adminAudit(tx, ctx, "product.create", "product", newId, { name: body.name, price: body.price, source });
     return newId;
@@ -120,9 +131,9 @@ export async function saveProduct(tx: Tx, ctx: AdminContext, id: string | null, 
   );
   await tx.query(
     `UPDATE variants SET sku = $2, barcode = $3, extra_barcodes = $4, price = $5, cost = $6, reorder_level = $7, active = $8,
-            updated_at = now() WHERE id = $1`,
+            plu = $9, updated_at = now() WHERE id = $1`,
     [old.variantId, empty(body.sku), empty(body.barcode), body.extraBarcodes, body.price, body.cost ?? null, body.reorderLevel ?? null,
-      body.active],
+      body.active, body.plu ?? null],
   );
   // Price changes are what managers most often need to trace later.
   await adminAudit(tx, ctx, "product.update", "product", id, {

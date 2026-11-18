@@ -20,6 +20,8 @@ export interface Variant {
   barcode: string | null;
   /** More barcodes for the same item (older packs and so on). */
   extraBarcodes?: string[];
+  /** The item code on the shop's scale; scale labels carry it. */
+  plu?: string | null;
   attributes: Record<string, string>;
   price: number;
   active: boolean;

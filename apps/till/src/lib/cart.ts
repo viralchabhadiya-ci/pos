@@ -2,6 +2,8 @@ import {
   applyPromotions,
   normalizeQty,
   priceOrder,
+  scaleLine,
+  type ScaleBarcode,
   type AppliedPromotion,
   type LineInput,
   type OrderTotals,
@@ -17,6 +19,8 @@ export interface CartLine extends LineInput {
    * was changed by hand: such a line keeps its price and takes no promotion.
    */
   listPrice?: number;
+  /** Set when the line came from a scale label: the label's barcode. */
+  scaleLabel?: string;
 }
 
 export interface CartCustomer {
@@ -86,6 +90,34 @@ export function addItem(cart: Cart, item: SellableItem, qty = 1, newId: () => st
     taxId: item.taxId,
     uom: item.uom,
     listPrice: item.price,
+  };
+  return { ...cart, lines: [...cart.lines, line] };
+}
+
+/**
+ * Adds a line from a scale label: the weight (or the price) printed on it. Each label is its
+ * own line, and a price label's amount is kept as printed, like a price set by hand.
+ */
+export function addScaleItem(
+  cart: Cart,
+  item: SellableItem,
+  label: ScaleBarcode,
+  code: string,
+  newId: () => string = () => crypto.randomUUID(),
+): Cart | null {
+  const sold = scaleLine(label, item);
+  if (!sold) return null;
+  const line: CartLine = {
+    id: newId(),
+    variantId: item.variantId,
+    name: item.name,
+    unitPrice: sold.unitPrice,
+    qty: sold.qty,
+    discountBp: 0,
+    taxId: item.taxId,
+    uom: item.uom,
+    listPrice: item.price,
+    scaleLabel: code,
   };
   return { ...cart, lines: [...cart.lines, line] };
 }

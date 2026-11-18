@@ -23,6 +23,7 @@ import { Sales } from "./pages/Sales.js";
 import { Settings } from "./pages/Settings.js";
 import { Staff } from "./pages/Staff.js";
 import { Inventory } from "./pages/inventory/Inventory.js";
+import { Labels } from "./pages/Labels.js";
 
 const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -35,6 +36,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "categories", label: "Categories", icon: "tag" },
   { path: "promotions", label: "Promotions", icon: "percent" },
   { path: "price-lists", label: "Price lists", icon: "list" },
+  { path: "labels", label: "Scales & labels", icon: "printer" },
   { path: "loyalty", label: "Loyalty & gift cards", icon: "gift" },
   { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
@@ -122,6 +124,8 @@ export function App() {
         return <Inventory me={me} route={route.slice(1)} />;
       case "customers":
         return <Customers me={me} />;
+      case "labels":
+        return <Labels me={me} />;
       case "loyalty":
         return <Loyalty me={me} cardId={route[1] === "cards" ? route[2] : undefined} />;
       case "audit":

@@ -249,7 +249,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
       <h2>Import products</h2>
       <p className="muted">
         Use a CSV file with the columns <code>name</code> and <code>price</code>, plus any of <code>name_ar</code>, <code>category</code>,{" "}
-        <code>barcode</code>, <code>extra_barcodes</code> (separate with |), <code>sku</code>, <code>cost</code>, <code>vat</code>,{" "}
+        <code>barcode</code>, <code>extra_barcodes</code> (separate with |), <code>sku</code>, <code>scale_code</code>, <code>cost</code>, <code>vat</code>,{" "}
         <code>unit</code> (unit or kg), <code>reorder_level</code> and <code>active</code> (yes or no). Rows with a known barcode or
         SKU update that product. Export first to get a file in the right shape.
       </p>
@@ -335,6 +335,7 @@ function ProductDialog({
     barcode: product?.barcode ?? "",
     extraBarcodes: product?.extraBarcodes.join(", ") ?? "",
     sku: product?.sku ?? "",
+    plu: product?.plu ?? "",
     reorderLevel: product?.reorderLevel != null ? String(product.reorderLevel) : "",
     active: product?.active ?? true,
   });
@@ -376,6 +377,7 @@ function ProductDialog({
       barcode: form.barcode.trim() || null,
       extraBarcodes,
       sku: form.sku.trim() || null,
+      plu: form.plu.trim() || null,
       reorderLevel,
       active: form.active,
     };
@@ -386,7 +388,8 @@ function ProductDialog({
       onSaved();
     } catch (err) {
       const msg = errorText(err);
-      if (msg.toLowerCase().includes("barcode")) {
+      if (msg.includes("scale item code")) setErrors({ plu: msg });
+      else if (msg.toLowerCase().includes("barcode")) {
         const code = msg.match(/barcode (\S+)/)?.[1];
         setErrors(code && extraBarcodes.includes(code) ? { extraBarcodes: msg } : { barcode: msg });
       }
@@ -461,6 +464,17 @@ function ProductDialog({
           </Field>
           <Field label="SKU" hint="Optional internal code.">
             {(p) => <input {...p} value={form.sku} onChange={(e) => set("sku", e.target.value)} maxLength={64} />}
+          </Field>
+          <Field id="pf-plu" label="Scale item code" error={errors.plu} hint="The PLU this product has on your scale. Labels the scale prints then ring it up.">
+            {(p) => (
+              <input
+                {...p}
+                inputMode="numeric"
+                value={form.plu}
+                onChange={(e) => set("plu", e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder={form.uom === "kg" ? "e.g. 42" : "Optional"}
+              />
+            )}
           </Field>
           <Field id="pf-extraBarcodes" label="More barcodes" error={errors.extraBarcodes} hint="Other packs that ring up as this product. Separate with commas.">
             {(p) => (

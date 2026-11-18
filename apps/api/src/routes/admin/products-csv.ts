@@ -14,6 +14,7 @@ export const PRODUCT_COLUMNS = [
   "barcode",
   "extra_barcodes",
   "sku",
+  "scale_code",
   "price",
   "cost",
   "vat",
@@ -42,7 +43,7 @@ export async function productCsvRoutes(app: FastifyInstance) {
   app.get("/products/export.csv", async (req, reply) => {
     const ctx = await app.authAdmin(req);
     const { rows } = await app.db.query(
-      `SELECT p.name, p.name_ar, c.name AS category, v.barcode, v.extra_barcodes, v.sku, v.price, v.cost, t.name AS vat,
+      `SELECT p.name, p.name_ar, c.name AS category, v.barcode, v.extra_barcodes, v.sku, v.plu, v.price, v.cost, t.name AS vat,
               p.uom, v.reorder_level, p.active
          FROM products p
          JOIN LATERAL (SELECT * FROM variants v WHERE v.product_id = p.id ORDER BY v.id LIMIT 1) v ON true
@@ -60,6 +61,7 @@ export async function productCsvRoutes(app: FastifyInstance) {
         r.barcode,
         r.extra_barcodes.join("|"),
         r.sku,
+        r.plu,
         money(r.price),
         money(r.cost),
         r.vat,
@@ -96,7 +98,7 @@ export async function productCsvRoutes(app: FastifyInstance) {
       app.db.query("SELECT id, name FROM categories WHERE tenant_id = $1", [ctx.tenantId]),
       app.db.query(
         `SELECT p.id, p.name_ar AS "nameAr", p.category_id AS "categoryId", p.uom, p.tax_id AS "taxId", p.active,
-                v.barcode, v.sku, v.extra_barcodes AS "extraBarcodes", v.cost, v.reorder_level AS "reorderLevel"
+                v.barcode, v.sku, v.plu, v.extra_barcodes AS "extraBarcodes", v.cost, v.reorder_level AS "reorderLevel"
            FROM products p JOIN variants v ON v.product_id = p.id WHERE p.tenant_id = $1`,
         [ctx.tenantId],
       ),
@@ -152,6 +154,7 @@ export async function productCsvRoutes(app: FastifyInstance) {
           .map((b) => b.trim())
           .filter(Boolean),
         sku: get("sku") || null,
+        plu: get("scale_code") || null,
         reorderLevel,
         active: !["no", "false", "0"].includes(activeText),
       });
@@ -171,6 +174,7 @@ export async function productCsvRoutes(app: FastifyInstance) {
         if (!has("barcode")) body.barcode = cur.barcode;
         if (!has("extra_barcodes")) body.extraBarcodes = cur.extraBarcodes;
         if (!has("sku")) body.sku = cur.sku;
+        if (!has("scale_code")) body.plu = cur.plu;
         if (!has("reorder_level")) body.reorderLevel = cur.reorderLevel;
         if (!has("active")) body.active = cur.active;
         if (!has("category")) {
