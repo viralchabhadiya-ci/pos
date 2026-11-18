@@ -17,7 +17,7 @@ export async function customerRoutes(app: FastifyInstance) {
     if (q.length < 2) return { customers: [] };
     const digits = q.replace(/\D/g, "");
     const { rows } = await app.db.query(
-      `SELECT id, name, phone, email, trn FROM customers
+      `SELECT id, name, phone, email, trn, price_list_id AS "priceListId" FROM customers
         WHERE tenant_id = $1 AND (name ILIKE $2 OR ($3 <> '' AND phone LIKE $4))
         ORDER BY name LIMIT 20`,
       [device.tenantId, `%${q}%`, digits, `%${digits}`],

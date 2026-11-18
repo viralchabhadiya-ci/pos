@@ -21,6 +21,7 @@ export interface Tax { id: string; name: string; rateBp: number; priceIncluded: 
 export interface Category { id: string; name: string; nameAr: string | null; sort: number; active: boolean; productCount: number }
 export interface Product {
   id: string;
+  variantId: string;
   name: string;
   nameAr: string | null;
   categoryId: string | null;
@@ -91,6 +92,8 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   trn: string | null;
+  priceListId?: string | null;
+  priceListName?: string | null;
   orders?: number;
   spent?: number;
   lastVisit?: string | null;
@@ -116,4 +119,53 @@ export interface Store {
   timezone: string;
   cashRoundingStep: number;
   receiptFooter: string | null;
+  priceListId?: string | null;
+}
+
+export type PromotionKind = "percent_off" | "buy_x_get_y" | "multi_buy" | "order_percent_off" | "order_amount_off";
+export interface Promotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  target: { all: boolean; categoryIds: string[]; productIds: string[] };
+  percentBp: number | null;
+  buyQty: number | null;
+  getQty: number | null;
+  bundleQty: number | null;
+  bundlePrice: number | null;
+  amount: number | null;
+  minSubtotal: number | null;
+  minQty: number | null;
+  code: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  days: number[] | null;
+  startTime: string | null;
+  endTime: string | null;
+  storeIds: string[] | null;
+  priority: number;
+  maxUses: number | null;
+  uses: number;
+  active: boolean;
+  sales: number;
+  discount: number;
+  lastUsed: string | null;
+}
+export interface PriceList {
+  id: string;
+  name: string;
+  active: boolean;
+  itemCount: number;
+  customerCount: number;
+  stores: { id: string; name: string }[];
+}
+export interface PriceListItem {
+  variantId: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  basePrice: number;
+  price: number;
+  productActive: boolean;
 }

@@ -1,4 +1,4 @@
-import { checkPayments, type PaymentInput } from "@pos/core";
+import { checkPayments, type AppliedPromotion, type PaymentInput } from "@pos/core";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useState } from "react";
 import { CardPanel } from "../components/CardPanel.js";
@@ -13,7 +13,9 @@ import { loadTerminal, originalCardPayment, type CardResult, type Terminal } fro
 
 interface Props {
   setup: DeviceSetup;
+  /** The cart with promotions already worked into its lines. */
   cart: Cart;
+  promotions?: AppliedPromotion[];
   total: number;
   cashierId: string;
   onDone: (order: LocalOrder) => void;
@@ -27,7 +29,7 @@ const QUICK_CASH = [1000, 2000, 5000, 10000, 20000];
  * what the customer handed over and the change is shown. "Card" goes to the register's
  * integrated terminal when it has one; "Card (manual terminal)" is confirmed by the cashier.
  */
-export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel }: Props) {
+export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, onDone, onCancel }: Props) {
   const methods = useLiveQuery(() => db.paymentMethods.filter((m) => m.active).toArray(), []) ?? [];
   const [payments, setPayments] = useState<PaymentInput[]>([]);
   const [entry, setEntry] = useState("");
@@ -110,7 +112,7 @@ export function PaymentDialog({ setup, cart, total, cashierId, onDone, onCancel 
   const finish = async () => {
     setBusy(true);
     try {
-      onDone(await completeOrder(cart, payments, cashierId, orderId));
+      onDone(await completeOrder(cart, payments, cashierId, orderId, promotions));
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

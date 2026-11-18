@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import type { OrderSync, OrderTotals, PaymentCheck } from "@pos/core";
+import type { OrderSync, OrderTotals, PaymentCheck, Promotion } from "@pos/core";
 
 /** Local copies of the catalog. Shapes match /sync/catalog. */
 export interface Tax { id: string; name: string; rateBp: number; priceIncluded: boolean; active: boolean }
@@ -26,6 +26,9 @@ export interface Variant {
 }
 export interface PaymentMethod { id: string; name: string; kind: "cash" | "card" | "card_manual"; active: boolean }
 export interface User { id: string; name: string; role: "cashier" | "manager" | "owner"; pinSalt: string; pinHash: string; active: boolean }
+export interface PriceList { id: string; name: string; active: boolean }
+/** id is "priceListId:variantId". */
+export interface PriceListItem { id: string; priceListId: string; variantId: string; price: number; active: boolean }
 
 export interface DeviceSetup {
   tenant: { id: string; name: string; currency: string };
@@ -40,6 +43,8 @@ export interface DeviceSetup {
     timezone: string;
     cashRoundingStep: number;
     receiptFooter: string | null;
+    /** The store's own prices; a customer's price list wins over it. */
+    priceListId?: string | null;
   };
   register: { id: string; code: string; name: string };
   /** A device paired as a customer display shows the cart instead of selling. */
@@ -137,6 +142,9 @@ export class TillDb extends Dexie {
   outbox!: Table<OutboxItem, number>;
   parked!: Table<ParkedSale, string>;
   cardAttempts!: Table<CardAttempt, string>;
+  promotions!: Table<Promotion, string>;
+  priceLists!: Table<PriceList, string>;
+  priceListItems!: Table<PriceListItem, string>;
 
   constructor(name = "pos-till") {
     super(name);
@@ -155,6 +163,7 @@ export class TillDb extends Dexie {
     });
     this.version(2).stores({ parked: "id, createdAt" });
     this.version(3).stores({ cardAttempts: "id, orderId, createdAt" });
+    this.version(4).stores({ promotions: "id", priceLists: "id", priceListItems: "id, priceListId" });
   }
 
   async getMeta<T>(key: string): Promise<T | undefined> {

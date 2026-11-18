@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { EInvoicePanel } from "../components/EInvoicePanel.js";
 import { Icon } from "../components/Icon.js";
 import { ErrorState, SkeletonRows } from "../components/States.js";
@@ -37,6 +38,7 @@ interface Bill {
     note: string | null;
   }[];
   payments: { kind: string; name: string; amount: number; tendered: number | null; change: number; reference: string | null }[];
+  promotions: { promotionId: string; name: string; code: string | null; amount: number }[];
 }
 
 export function OrderDetail({ id }: { id: string }) {
@@ -130,9 +132,18 @@ export function OrderDetail({ id }: { id: string }) {
               </table>
             </div>
             <dl className="totals">
+              {(b.promotions ?? []).map((p) => (
+                <Fragment key={p.promotionId}>
+                  <dt>
+                    {p.name}
+                    {p.code && <span className="badge code">{p.code}</span>}
+                  </dt>
+                  <dd className="num">−{money(p.amount)}</dd>
+                </Fragment>
+              ))}
               {b.discountTotal !== 0 && (
                 <>
-                  <dt>Discounts</dt>
+                  <dt>{b.promotions?.length ? "All discounts" : "Discounts"}</dt>
                   <dd className="num">−{money(Math.abs(b.discountTotal))}</dd>
                 </>
               )}

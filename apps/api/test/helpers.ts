@@ -63,8 +63,14 @@ let counter = 0;
 export function makeOrder(
   ctx: Ctx,
   sessionId: string,
-  items: { variant: number; qty: number; discountBp?: number }[],
-  opts: { pay?: "cash" | "card"; tendered?: number; refundOf?: string; orderDiscountBp?: number } = {},
+  items: { variant: number; qty: number; discountBp?: number; promoDiscount?: number; promotionId?: string | null }[],
+  opts: {
+    pay?: "cash" | "card";
+    tendered?: number;
+    refundOf?: string;
+    orderDiscountBp?: number;
+    promotions?: OrderSync["promotions"];
+  } = {},
 ): OrderSync {
   const vat: TaxRate = { id: ctx.data.vatId, name: "VAT 5%", rateBp: 500, priceIncluded: true };
   const lines = items.map((it) => {
@@ -76,6 +82,8 @@ export function makeOrder(
       qty: it.qty,
       unitPrice: v.price,
       discountBp: it.discountBp ?? 0,
+      promoDiscount: it.promoDiscount ?? 0,
+      promotionId: it.promotionId ?? null,
       taxId: ctx.data.vatId,
     };
   });
@@ -95,6 +103,7 @@ export function makeOrder(
     orderDiscountBp: opts.orderDiscountBp ?? 0,
     createdAt: new Date().toISOString(),
     lines,
+    promotions: opts.promotions ?? [],
     payments: [
       {
         id: randomUUID(),

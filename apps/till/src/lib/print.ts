@@ -56,7 +56,8 @@ export function receiptDoc(
 
   for (const l of order.totals.lines) {
     const uom = Number.isInteger(l.qty) ? "unit" : "kg";
-    const discount = l.lineDiscount ? ` (-${money(Math.abs(l.lineDiscount))})` : "";
+    const off = l.lineDiscount + (l.promoDiscount ?? 0);
+    const discount = off ? ` (-${money(Math.abs(off))})` : "";
     blocks.push({ type: "text", text: l.name });
     const nameAr = ar ? opts.arabicNames?.get(variants.get(l.id) ?? "") : null;
     if (nameAr) blocks.push({ type: "text", text: nameAr });
@@ -64,7 +65,11 @@ export function receiptDoc(
     const note = notes.get(l.id);
     if (note) blocks.push({ type: "text", text: `  ${L("Note", "ملاحظة")}: ${note}` });
   }
-  blocks.push({ type: "rule" }, { type: "row", left: L("Total excl. VAT", "المجموع بدون الضريبة"), right: money(order.totals.subtotalNet) });
+  blocks.push({ type: "rule" });
+  for (const p of order.promotions ?? []) {
+    blocks.push({ type: "row", left: p.name ?? L("Promotion", "عرض"), right: `-${money(Math.abs(p.amount))}` });
+  }
+  blocks.push({ type: "row", left: L("Total excl. VAT", "المجموع بدون الضريبة"), right: money(order.totals.subtotalNet) });
   for (const t of order.totals.taxes) {
     blocks.push({ type: "row", left: L(`VAT ${t.rateBp / 100}%`, `ضريبة القيمة المضافة ${t.rateBp / 100}%`), right: money(t.tax) });
   }

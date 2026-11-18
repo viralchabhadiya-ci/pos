@@ -12,7 +12,17 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof
  * the cloud is unreachable).
  */
 
-export const CATALOG_KINDS = ["taxes", "categories", "products", "variants", "paymentMethods", "users"] as const;
+export const CATALOG_KINDS = [
+  "taxes",
+  "categories",
+  "products",
+  "variants",
+  "paymentMethods",
+  "users",
+  "promotions",
+  "priceLists",
+  "priceListItems",
+] as const;
 export type CatalogKind = (typeof CATALOG_KINDS)[number];
 
 export interface DeviceRow {
@@ -52,7 +62,18 @@ export interface LocalOrder {
   body: {
     id: string;
     number: string;
-    lines: { id: string; variantId: string; name: string; qty: number; unitPrice: number; discountBp: number; taxId: string | null }[];
+    orderDiscountBp?: number;
+    lines: {
+      id: string;
+      variantId: string;
+      name: string;
+      qty: number;
+      unitPrice: number;
+      discountBp: number;
+      promoDiscount?: number;
+      promotionId?: string | null;
+      taxId: string | null;
+    }[];
     payments: { id: string; methodId: string; kind: string; amount: number }[];
     [key: string]: unknown;
   };

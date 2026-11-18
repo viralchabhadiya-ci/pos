@@ -15,7 +15,7 @@ export async function syncRoutes(app: FastifyInstance) {
     const params = [device.tenantId, since ?? "-infinity"];
     const q = (sql: string) => app.db.query(sql, params).then((r) => r.rows);
 
-    const [taxes, categories, products, variants, paymentMethods, users, stores] = await Promise.all([
+    const [taxes, categories, products, variants, paymentMethods, users, stores, promotions, priceLists, priceListItems] = await Promise.all([
       q(`SELECT id, name, rate_bp AS "rateBp", price_included AS "priceIncluded", kind, active
            FROM taxes WHERE tenant_id = $1 AND updated_at > $2`),
       q(`SELECT id, parent_id AS "parentId", name, name_ar AS "nameAr", sort, active
@@ -31,12 +31,36 @@ export async function syncRoutes(app: FastifyInstance) {
       app.db
         .query(
           `SELECT id, code, name, name_ar AS "nameAr", address, phone, trn, timezone,
-                  cash_rounding_step AS "cashRoundingStep", receipt_footer AS "receiptFooter"
+                  cash_rounding_step AS "cashRoundingStep", receipt_footer AS "receiptFooter", price_list_id AS "priceListId"
              FROM stores WHERE id = $1 AND updated_at > $2`,
           [device.storeId, since ?? "-infinity"],
         )
         .then((r) => r.rows),
+      // A coupon that has reached its use limit goes out as switched off.
+      q(`SELECT id, name, kind, json_build_object('all', target_all, 'categoryIds', category_ids, 'productIds', product_ids) AS target,
+                percent_bp AS "percentBp", buy_qty AS "buyQty", get_qty AS "getQty", bundle_qty AS "bundleQty",
+                bundle_price AS "bundlePrice", amount, min_subtotal AS "minSubtotal", min_qty AS "minQty", code,
+                starts_at AS "startsAt", ends_at AS "endsAt", days, start_time AS "startTime", end_time AS "endTime",
+                store_ids AS "storeIds", priority, (active AND (max_uses IS NULL OR uses < max_uses)) AS active
+           FROM promotions WHERE tenant_id = $1 AND updated_at > $2`),
+      q(`SELECT id, name, active FROM price_lists WHERE tenant_id = $1 AND updated_at > $2`),
+      q(`SELECT i.price_list_id || ':' || i.variant_id AS id, i.price_list_id AS "priceListId", i.variant_id AS "variantId",
+                i.price, i.active
+           FROM price_list_items i WHERE i.tenant_id = $1 AND i.updated_at > $2`),
     ]);
-    return { serverTime, full: !since, taxes, categories, products, variants, paymentMethods, users, store: stores[0] ?? null };
+    return {
+      serverTime,
+      full: !since,
+      taxes,
+      categories,
+      products,
+      variants,
+      paymentMethods,
+      users,
+      promotions,
+      priceLists,
+      priceListItems,
+      store: stores[0] ?? null,
+    };
   });
 }

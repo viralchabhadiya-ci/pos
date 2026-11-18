@@ -19,6 +19,13 @@ export interface LineInput {
   qty: number;
   /** Line discount in basis points: 1000 = 10%. */
   discountBp?: number;
+  /**
+   * Discount from a promotion, as an amount in minor units with the same sign as the line
+   * (negative on a return). Worked out by applyPromotions; applied after the line discount.
+   */
+  promoDiscount?: number;
+  /** The item promotion behind promoDiscount, if any. */
+  promotionId?: string | null;
   /** Tax applied to the line; null for out-of-scope items. */
   taxId: string | null;
 }
@@ -33,6 +40,7 @@ export interface PricedLine extends LineInput {
   /** unitPrice x qty before any discount. */
   amount: number;
   lineDiscount: number;
+  promoDiscount: number;
   orderDiscount: number;
   net: number;
   tax: number;
@@ -73,7 +81,14 @@ export function normalizeQty(qty: number): number {
 export function priceOrder(inputs: LineInput[], ctx: PricingContext): OrderTotals {
   const amounts = inputs.map((l) => mulDiv(l.unitPrice, Math.round(normalizeQty(l.qty) * QTY_SCALE), QTY_SCALE));
   const lineDiscounts = inputs.map((l, i) => mulDiv(amounts[i]!, l.discountBp ?? 0, 10_000));
-  const afterLine = amounts.map((a, i) => a - lineDiscounts[i]!);
+  const promos = inputs.map((l, i) => {
+    const p = l.promoDiscount ?? 0;
+    const room = amounts[i]! - lineDiscounts[i]!;
+    // A promotion never takes a line below zero, nor flips its sign.
+    if (p === 0 || room === 0 || Math.sign(p) !== Math.sign(room)) return 0;
+    return Math.abs(p) > Math.abs(room) ? room : p;
+  });
+  const afterLine = amounts.map((a, i) => a - lineDiscounts[i]! - promos[i]!);
 
   const orderDiscountTotal = mulDiv(
     afterLine.reduce((s, a) => s + a, 0),
@@ -103,6 +118,7 @@ export function priceOrder(inputs: LineInput[], ctx: PricingContext): OrderTotal
       qty: normalizeQty(l.qty),
       amount: amounts[i]!,
       lineDiscount: lineDiscounts[i]!,
+      promoDiscount: promos[i]!,
       orderDiscount: orderDiscounts[i]!,
       net,
       tax: taxAmount,
@@ -124,7 +140,7 @@ export function priceOrder(inputs: LineInput[], ctx: PricingContext): OrderTotal
   return {
     lines,
     amountTotal: sum((l) => l.amount),
-    discountTotal: sum((l) => l.lineDiscount + l.orderDiscount),
+    discountTotal: sum((l) => l.lineDiscount + l.promoDiscount + l.orderDiscount),
     subtotalNet: sum((l) => l.net),
     taxTotal: sum((l) => l.tax),
     total: sum((l) => l.gross),

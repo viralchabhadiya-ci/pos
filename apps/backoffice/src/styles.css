@@ -472,3 +472,31 @@ textarea { width: 100%; font: inherit; padding: var(--space-2) var(--space-3); b
 .form-warn { display: flex; gap: var(--space-2); align-items: flex-start; background: var(--warn-soft); padding: var(--space-3); border-radius: var(--radius-sm); margin: 0 0 var(--space-4); }
 .page-head h1 .badge { margin-inline-start: var(--space-2); vertical-align: middle; }
 .platform .sidenav { border-inline-end-color: var(--line); }
+
+/* Promotions and price lists */
+.badge.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.03em; color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.field-label { margin: var(--space-2) 0 var(--space-2); font-size: var(--text-sm); font-weight: 600; }
+.kind-grid { display: grid; gap: var(--space-2); grid-template-columns: 1fr; margin-bottom: var(--space-4); }
+@media (min-width: 640px) { .kind-grid { grid-template-columns: 1fr 1fr; } }
+.kind {
+  display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm); cursor: pointer; background: var(--surface);
+}
+.kind:hover { border-color: var(--accent); }
+.kind.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.kind input { width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+.kind span { display: flex; flex-direction: column; gap: 2px; }
+.kind .hint { margin: 0; }
+.pick-results { list-style: none; margin: calc(-1 * var(--space-2)) 0 var(--space-3); padding: 0; display: grid; gap: 2px; }
+.pick-results .btn { width: 100%; justify-content: flex-start; text-align: start; }
+.picked { list-style: none; margin: 0 0 var(--space-4); padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.picked li { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: var(--text-sm); }
+.picked .icon-btn { width: 32px; height: 32px; min-height: 0; }
+.add-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 var(--space-4); }
+.add-row > .field { flex: 1 1 240px; }
+.add-row > .btn { margin-bottom: var(--space-4); }
+.picked-one { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; min-height: 44px; }
+.bulk-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.bulk-row input { width: 90px; }
+.price-cell { display: inline-flex; align-items: center; gap: var(--space-2); justify-content: flex-end; margin: 0; }
+.price-cell input { width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
