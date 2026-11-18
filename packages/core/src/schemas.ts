@@ -103,3 +103,25 @@ export const CashMoveSchema = z.object({
   at: z.string().datetime(),
 });
 export type CashMove = z.infer<typeof CashMoveSchema>;
+
+/**
+ * Something done at the till that leaves no bill behind (a voided sale, the drawer opened with
+ * no sale) or that needed a manager (a price change, a big discount, a refund). Queued like a
+ * sale so it reaches the audit log even after a day offline.
+ */
+export const TILL_EVENT_KINDS = ["void", "no_sale", "price_override", "discount", "refund"] as const;
+export const TillEventSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(TILL_EVENT_KINDS),
+  sessionId: z.string().uuid().nullable().optional(),
+  userId: z.string().uuid(),
+  /** The manager whose PIN was entered, or the owner who approved from their phone. */
+  approvedBy: z.string().uuid().nullable().optional(),
+  /** Set when the approval came from the owner app. */
+  approvalId: z.string().uuid().nullable().optional(),
+  summary: z.string().trim().min(1).max(200),
+  amount: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  details: z.record(z.unknown()).optional(),
+  at: z.string().datetime(),
+});
+export type TillEvent = z.infer<typeof TillEventSchema>;

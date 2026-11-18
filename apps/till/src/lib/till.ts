@@ -1,4 +1,4 @@
-import { checkPayments, formatReceiptNumber, pointsEarned, pointsEligible, type AppliedPromotion, type PaymentInput, type TaxRate } from "@pos/core";
+import { checkPayments, formatReceiptNumber, pointsEarned, pointsEligible, type AppliedPromotion, type PaymentInput, type TaxRate, type TillEvent } from "@pos/core";
 import { request, type DeviceAuth } from "./api.js";
 import type { Cart } from "./cart.js";
 import { cartTotals } from "./cart.js";
@@ -72,6 +72,19 @@ export async function openSession(userId: string, openingCash: number): Promise<
     });
     return session;
   });
+}
+
+/**
+ * Records something done at the till that the owner should see in the audit log: a voided
+ * sale, the drawer opened with no sale, or an override a manager allowed. Queued, so it
+ * works offline.
+ */
+export async function logTillEvent(e: Omit<TillEvent, "id" | "at">) {
+  const event: TillEvent = { ...e, id: crypto.randomUUID(), at: new Date().toISOString() };
+  await db.transaction("rw", [db.outbox], async () => {
+    await enqueue("till.event", event.id, event);
+  });
+  return event;
 }
 
 export async function addCashMove(sessionId: string, userId: string, kind: "in" | "out", amount: number, reason: string) {

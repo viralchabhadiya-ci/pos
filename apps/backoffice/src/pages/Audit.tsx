@@ -20,10 +20,27 @@ const ENTITIES = [
   { value: "store", label: "Store settings" },
   { value: "order", label: "Bills" },
   { value: "session", label: "Shifts" },
+  { value: "till_event", label: "Till: voids, drawer, overrides" },
+  { value: "approval", label: "Approvals from the owner app" },
 ];
+
+/** What happened at a till, said the way an owner would. */
+const TILL_EVENTS: Record<string, string> = {
+  "till.void": "Sale voided at the till",
+  "till.no_sale": "Cash drawer opened with no sale",
+  "till.price_override": "Price changed at the till",
+  "till.discount": "Big discount allowed at the till",
+  "till.refund": "Refund allowed at the till",
+  "receipt.email": "Receipt emailed to the customer",
+  "approval.request": "Till asked the owner for approval",
+  "approval.approved": "Approved from the owner app",
+  "approval.denied": "Denied from the owner app",
+};
 
 /** "product.update" → "Product updated", readable for owners. */
 function describe(e: AuditEntry): string {
+  const known = TILL_EVENTS[e.action];
+  if (known) return known;
   const [entity = "", verb = ""] = e.action.split(".");
   const nouns: Record<string, string> = { session: "shift", cash: "cash", staff: "staff member", tax: "VAT rate", order: "bill" };
   const noun = nouns[entity] ?? entity.replace(/_/g, " ");
@@ -51,16 +68,21 @@ function describe(e: AuditEntry): string {
 function details(e: AuditEntry): string {
   const d = e.data ?? {};
   const parts: string[] = [];
+  if (typeof d.summary === "string" && e.entity === "till_event") parts.push(d.summary);
   if (typeof d.name === "string") parts.push(d.name);
   if (typeof d.priceFrom === "number" && typeof d.priceTo === "number") parts.push(`price ${money(d.priceFrom)} → ${money(d.priceTo)}`);
   else if (typeof d.price === "number") parts.push(`price ${money(d.price)}`);
-  if (typeof d.amount === "number") parts.push(`AED ${money(d.amount)}`);
+  // A till event's summary already says the amount.
+  if (typeof d.amount === "number" && e.entity !== "till_event") parts.push(`AED ${money(d.amount)}`);
   if (typeof d.discount === "number") parts.push(`AED ${money(d.discount)} off`);
   if (typeof d.qty === "number") parts.push(`qty ${d.qty > 0 ? "+" : ""}${d.qty}`);
   if (typeof d.active === "boolean") parts.push(d.active ? "switched on" : "switched off");
   if (typeof d.create === "number") parts.push(`${d.create} added, ${d.update} updated`);
   if (typeof d.role === "string" && !d.name) parts.push(d.role);
   if (d.source === "import") parts.push("from CSV");
+  if (typeof d.approvedByName === "string") parts.push(`approved by ${d.approvedByName}${d.approvalId ? " from the owner app" : ""}`);
+  else if (e.entity === "till_event" && d.approvalId) parts.push("approved from the owner app");
+  if (typeof d.domain === "string") parts.push(`to an address at ${d.domain}`);
   return parts.join(" · ");
 }
 

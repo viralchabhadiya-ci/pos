@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import cors from "@fastify/cors";
-import { CashMoveSchema, DisplayRelay, DisplayStateSchema, OrderBatchSchema, SessionCloseSchema, SessionOpenSchema, type OrderSync } from "@pos/core";
+import { CashMoveSchema, TillEventSchema, DisplayRelay, DisplayStateSchema, OrderBatchSchema, SessionCloseSchema, SessionOpenSchema, type OrderSync } from "@pos/core";
 import { encodeDrawerKick, encodeReceipt, type ReceiptDoc } from "@pos/escpos";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z, ZodError } from "zod";
@@ -356,6 +356,13 @@ export async function buildHub(config: HubConfig, opts: { logger?: boolean; stor
     const dev = await device(req);
     const body = CashMoveSchema.parse(req.body);
     return accept(dev, "cash.move", "/cash-moves", body, { onAccepted: () => {}, queued: () => ({ ok: true, queued: true }) }, reply);
+  });
+
+  // Voids, drawer opens and overrides: queued like cash moves so they reach the audit log.
+  app.post("/till-events", async (req, reply) => {
+    const dev = await device(req);
+    const body = TillEventSchema.parse(req.body);
+    return accept(dev, "till.event", "/till-events", body, { onAccepted: () => {}, queued: () => ({ ok: true, queued: true }) }, reply);
   });
 
   app.post<{ Params: { id: string } }>("/sessions/:id/close", async (req, reply) => {

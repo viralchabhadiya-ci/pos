@@ -36,7 +36,7 @@ pnpm dev:owner                 # http://localhost:5175
 ```
 
 Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and open a shift.
-The manager PIN `9999` approves price changes, discounts above 10% and voids.
+The manager PIN `9999` approves price changes, discounts above 10%, voids, refunds and opening the drawer with no sale. A manager or owner signed in to the till is not asked.
 A new pairing code: `pnpm --filter @pos/api pair <registerId>`, or **Tills & devices → Pair a device** in the back office.
 
 ### On the till
@@ -50,6 +50,16 @@ A new pairing code: `pnpm --filter @pos/api pair <registerId>`, or **Tills & dev
 - **Digital receipt:** set `PUBLIC_URL` on the API to its public address. Every printed receipt then
   carries a QR code that opens `/r/<order id>`, a bilingual tax invoice page the customer can keep.
   The id is a random UUID, so only someone holding the receipt can open it.
+- **No manager in the shop:** every manager PIN screen has *Ask the owner on their phone*. The
+  request appears in the owner app (Approvals) with the amount; the till carries on by itself once
+  the owner approves, or shows the denial and the owner's note. Leaving the screen withdraws the
+  request. This needs the internet; the PIN works offline.
+- **Audit:** voids, drawer opens with no sale, price changes, big discounts and refunds are written to
+  the audit log with who approved them (Back office → Audit log → Till: voids, drawer, overrides).
+  They are queued like sales, so they arrive after an outage too.
+- **Send the receipt:** after a sale, *Send the receipt* opens WhatsApp with the receipt link (the
+  customer's number is filled in when they are on the sale) or emails the link (`SMTP_URL` on the
+  API; at most 3 emails per bill). Both need `PUBLIC_URL`.
 - **Arabic:** the العربية / English button in the top bar switches the till between English and
   Arabic, right to left. Each till remembers its own choice. Keypads keep their usual order.
 - **Customer display:** the screen the customer sees, with items in English and Arabic, totals, change

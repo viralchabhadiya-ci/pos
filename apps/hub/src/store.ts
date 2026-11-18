@@ -43,7 +43,7 @@ export interface DeviceSetup {
   [key: string]: unknown;
 }
 
-export type OutboxKind = "orders" | "session.open" | "session.close" | "cash.move" | "customer";
+export type OutboxKind = "orders" | "session.open" | "session.close" | "cash.move" | "customer" | "till.event";
 
 export interface OutboxRow {
   seq: number;

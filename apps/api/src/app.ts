@@ -19,6 +19,7 @@ import { platformRoutes } from "./routes/platform.js";
 import { signupRoutes } from "./routes/signup.js";
 import { createProviders, type PaymentProvider } from "./payments/index.js";
 import { approvalRoutes } from "./routes/approvals.js";
+import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
 
 /** A signed-in back office user (owner or manager). */
@@ -129,6 +130,7 @@ export async function buildApp(
   await app.register(giftCardRoutes);
   await app.register(signupRoutes);
   await app.register(approvalRoutes);
+  await app.register(tillEventRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
   return app;

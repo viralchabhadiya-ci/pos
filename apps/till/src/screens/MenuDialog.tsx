@@ -6,7 +6,7 @@ import type { DeviceSetup, Session, User } from "../lib/db.js";
 import { tryParseMoney } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 import { getReceiptLang, openDrawerOnHub, printOnHub, setReceiptLang, shiftReportDoc, type ReceiptLang } from "../lib/print.js";
-import { addCashMove, shiftSummary } from "../lib/till.js";
+import { addCashMove, logTillEvent, shiftSummary } from "../lib/till.js";
 import { useSyncStatus } from "../lib/useSync.js";
 
 interface Props {
@@ -33,10 +33,11 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
     setDone(lang === "bilingual" ? t("Receipts print in English and Arabic") : t("Receipts print in English only"));
   };
 
-  const openDrawer = async () => {
+  const openDrawer = async (approvedBy: string, approvalId?: string) => {
     setDrawerPin(false);
     try {
       await openDrawerOnHub();
+      void logTillEvent({ kind: "no_sale", sessionId: session.id, userId: user.id, approvedBy, approvalId, summary: "Opened the cash drawer with no sale" });
       setDone(t("Drawer opened"));
       setError(null);
     } catch (err) {
@@ -61,7 +62,14 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
   };
 
   if (drawerPin) {
-    return <ManagerPin reason={t("Open the cash drawer without a sale")} onApprove={() => void openDrawer()} onCancel={() => setDrawerPin(false)} />;
+    return (
+      <ManagerPin
+        reason={t("Open the cash drawer without a sale")}
+        ask={{ kind: "no_sale", summary: "Open the cash drawer with no sale", userId: user.id }}
+        onApprove={(managerId, approvalId) => void openDrawer(managerId, approvalId)}
+        onCancel={() => setDrawerPin(false)}
+      />
+    );
   }
 
   const saveCash = async () => {
@@ -127,7 +135,7 @@ export function MenuDialog({ setup, session, user, onCloseShift, onLogout, onClo
             {t("Cash out")}
           </button>
           {hasDrawer && (
-            <button type="button" className="btn block" onClick={() => setDrawerPin(true)}>
+            <button type="button" className="btn block" onClick={() => (user.role === "cashier" ? setDrawerPin(true) : void openDrawer(user.id))}>
               <Icon name="drawer" />
               {t("Open drawer")}
             </button>

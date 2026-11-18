@@ -1,7 +1,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon.js";
-import { ManagerPin } from "../components/ManagerPin.js";
+import { ManagerPin, type RemoteAsk } from "../components/ManagerPin.js";
 import { StrandedCards } from "../components/StrandedCards.js";
 import { Modal } from "../components/Modal.js";
 import { Toast } from "../components/Toast.js";
@@ -26,6 +26,7 @@ import { db, type DeviceSetup, type LocalOrder, type ParkedSale, type Session, t
 import { publishDisplay, receiptUrl } from "../lib/display.js";
 import { aed, money, qtyText, tryParseMoney } from "../lib/format.js";
 import { itemCount, t } from "../lib/i18n.js";
+import { logTillEvent } from "../lib/till.js";
 import { usePricing } from "../lib/usePricing.js";
 import { useScanner } from "../lib/useScanner.js";
 import { CouponDialog } from "./CouponDialog.js";
@@ -46,7 +47,7 @@ interface Props {
   onMenu: () => void;
 }
 
-export function SellScreen({ setup, user }: Props) {
+export function SellScreen({ setup, user, session }: Props) {
   const [cart, setCart] = useState<Cart>(emptyCart);
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<PadMode>("qty");
@@ -55,9 +56,11 @@ export function SellScreen({ setup, user }: Props) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [receipt, setReceipt] = useState<LocalOrder | null>(null);
+  const [receiptPhone, setReceiptPhone] = useState<string | null>(null);
   const [weighing, setWeighing] = useState<SellableItem | null>(null);
-  const [approval, setApproval] = useState<{ reason: string; apply: () => void } | null>(null);
+  const [approval, setApproval] = useState<{ reason: string; ask: RemoteAsk; apply: (approvedBy: string, approvalId?: string) => void } | null>(null);
   const [refunding, setRefunding] = useState(false);
+  const [refundOk, setRefundOk] = useState<{ orderId: string; amount: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noting, setNoting] = useState(false);
   const [showParked, setShowParked] = useState(false);
@@ -129,6 +132,15 @@ export function SellScreen({ setup, user }: Props) {
   const totals = useMemo(() => cartTotals(promoted.cart, taxes), [promoted, taxes]);
   const promoTotal = promoted.applied.reduce((s, a) => s + a.amount, 0);
   const isRefund = cart.refundOfOrderId !== null;
+
+  /**
+   * Runs something a cashier needs a manager for. A manager or owner on the till goes ahead;
+   * a cashier gets the manager PIN, or can ask the owner on their phone.
+   */
+  const withManager = (reason: string, ask: Omit<RemoteAsk, "userId">, apply: (approvedBy: string, approvalId?: string) => void) => {
+    if (user.role !== "cashier") apply(user.id);
+    else setApproval({ reason, ask: { ...ask, userId: user.id }, apply });
+  };
 
   // The customer display follows the cart, then shows the change and the receipt QR.
   useEffect(() => {
@@ -225,7 +237,17 @@ export function SellScreen({ setup, user }: Props) {
       setEntry("");
     };
     if (needsManager(patch, selectedLine)) {
-      setApproval({ reason: mode === "price" ? t("Change the price") : t("Discount above 10%"), apply });
+      // The pad starts empty again whatever the manager or owner decides.
+      setEntry("");
+      const price = patch.unitPrice !== undefined;
+      const summary = price
+        ? `Price of ${selectedLine.name} from AED ${money(selectedLine.unitPrice)} to AED ${money(patch.unitPrice!)}`
+        : `${(patch.discountBp ?? 0) / 100}% off ${selectedLine.name} (AED ${money(selectedLine.unitPrice * Math.abs(selectedLine.qty))})`;
+      const kind = price ? "price_override" : "discount";
+      withManager(price ? t("Change the price") : t("Discount above 10%"), { kind, summary }, (approvedBy, approvalId) => {
+        apply();
+        void logTillEvent({ kind, sessionId: session.id, userId: user.id, approvedBy, approvalId, summary, details: { variantId: selectedLine.variantId } });
+      });
     } else apply();
   };
 
@@ -239,20 +261,45 @@ export function SellScreen({ setup, user }: Props) {
   const finish = (order: LocalOrder) => {
     setPaying(false);
     setReceipt(order);
+    setReceiptPhone(cart.customer?.phone ?? null);
     setCart(emptyCart());
     setSelected(null);
   };
 
   const clearNotice = useCallback(() => setNotice(null), []);
 
+  /** A cashier's refund needs a manager (or the owner from their phone) before money goes back. */
+  const startPaying = () => {
+    if (!isRefund) return setPaying(true);
+    const amount = Math.abs(totals.total);
+    // Approved once for this refund; asked again only if it has grown since.
+    if (refundOk && refundOk.orderId === cart.refundOfOrderId && amount <= refundOk.amount) return setPaying(true);
+    const summary = `Refund AED ${money(amount)}${cart.refundOfNumber ? ` on bill ${cart.refundOfNumber}` : ""}`;
+    withManager(t("Refund"), { kind: "refund", summary, amount }, (approvedBy, approvalId) => {
+      setRefundOk({ orderId: cart.refundOfOrderId!, amount });
+      setPaying(true);
+      void logTillEvent({
+        kind: "refund",
+        sessionId: session.id,
+        userId: user.id,
+        approvedBy,
+        approvalId,
+        summary,
+        amount,
+        details: { refundOfOrderId: cart.refundOfOrderId },
+      });
+    });
+  };
+
   const clear = () => {
     if (cart.lines.length && !isRefund) {
-      setApproval({
-        reason: t("Void this sale"),
-        apply: () => {
-          setCart(emptyCart());
-          setSelected(null);
-        },
+      const count = cart.lines.reduce((n, l) => n + (l.uom === "kg" ? 1 : Math.abs(l.qty)), 0);
+      const summary = `Void a sale of ${count} item${count === 1 ? "" : "s"}, AED ${money(totals.total)}`;
+      const voided = cart.lines.map((l) => ({ name: l.name, qty: l.qty, unitPrice: l.unitPrice }));
+      withManager(t("Void this sale"), { kind: "void", summary, amount: totals.total }, (approvedBy, approvalId) => {
+        setCart(emptyCart());
+        setSelected(null);
+        void logTillEvent({ kind: "void", sessionId: session.id, userId: user.id, approvedBy, approvalId, summary, amount: totals.total, details: { lines: voided } });
       });
     } else {
       setCart(emptyCart());
@@ -518,7 +565,7 @@ export function SellScreen({ setup, user }: Props) {
                 </button>
               </>
             )}
-            <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={() => setPaying(true)}>
+            <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={startPaying}>
               <span>{isRefund ? t("Refund") : t("Pay")}</span>
               <span>{aed(totals.total)}</span>
             </button>
@@ -553,6 +600,7 @@ export function SellScreen({ setup, user }: Props) {
           setup={setup}
           order={receipt}
           cashier={user}
+          phone={receiptPhone}
           onClose={() => {
             setReceipt(null);
             // Ready for the next customer's first scan.
@@ -577,8 +625,9 @@ export function SellScreen({ setup, user }: Props) {
         <ManagerPin
           reason={approval.reason}
           onCancel={() => setApproval(null)}
-          onApprove={() => {
-            approval.apply();
+          ask={approval.ask}
+          onApprove={(managerId, approvalId) => {
+            approval.apply(managerId, approvalId);
             setApproval(null);
           }}
         />

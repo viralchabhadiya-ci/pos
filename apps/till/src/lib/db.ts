@@ -88,7 +88,7 @@ export interface LocalOrder extends OrderSync {
   pointsEarned?: number;
 }
 
-export type OutboxKind = "session.open" | "cash.move" | "order" | "session.close";
+export type OutboxKind = "session.open" | "cash.move" | "order" | "session.close" | "till.event";
 export interface OutboxItem {
   seq?: number;
   kind: OutboxKind;

@@ -150,6 +150,7 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
       lines,
       orderDiscountBp: sale.orderDiscountBp,
       refundOfOrderId: sale.id,
+      refundOfNumber: sale.number,
       customerId: sale.customerId,
       customer,
       refundPointsRoom: sale.paidInPoints,

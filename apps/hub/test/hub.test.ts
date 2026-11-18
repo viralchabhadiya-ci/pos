@@ -100,6 +100,7 @@ describe("store hub", () => {
   let sessionId: string;
   let soldOffline: ReturnType<typeof makeOrder>;
   let customerId: string;
+  let voidEventId: string;
 
   it("tells a till it is a hub", async () => {
     const res = await hub.app.inject({ method: "GET", url: "/hub/info" });
@@ -170,6 +171,15 @@ describe("store hub", () => {
     });
     expect(move.json()).toEqual({ ok: true, queued: true });
 
+    voidEventId = randomUUID();
+    const voided = await hub.app.inject({
+      method: "POST",
+      url: "/till-events",
+      headers: tillA,
+      payload: { id: voidEventId, kind: "void", sessionId, userId: data.cashierId, approvedBy: data.managerId, summary: "Voided a sale of 2 items", amount: 900, at: new Date().toISOString() },
+    });
+    expect(voided.json()).toEqual({ ok: true, queued: true });
+
     customerId = randomUUID();
     const customer = await hub.app.inject({
       method: "POST",
@@ -180,7 +190,7 @@ describe("store hub", () => {
     expect(customer.json()).toEqual({ id: customerId, queued: true });
 
     const info = await hub.app.inject({ method: "GET", url: "/hub/info" });
-    expect(info.json()).toMatchObject({ cloudOnline: false, pending: 4 });
+    expect(info.json()).toMatchObject({ cloudOnline: false, pending: 5 });
   });
 
   it("lets another till find the offline sale and customer", async () => {
@@ -248,7 +258,7 @@ describe("store hub", () => {
 
   it("sends everything to the cloud exactly once when the internet is back", async () => {
     await startCloud();
-    expect(await hub.flush()).toBe(5);
+    expect(await hub.flush()).toBe(6);
     expect(await hub.flush()).toBe(0);
 
     const { rows: orders } = await db.query("SELECT id FROM orders WHERE session_id = $1 ORDER BY created_at", [sessionId]);
@@ -257,6 +267,8 @@ describe("store hub", () => {
 
     const { rows: sessions } = await db.query("SELECT state, closing_cash_counted FROM sessions WHERE id = $1", [sessionId]);
     expect(sessions[0]).toMatchObject({ state: "closed", closing_cash_counted: 50_000 });
+    const { rows: events } = await db.query("SELECT action FROM audit_log WHERE entity = 'till_event' AND entity_id = $1", [voidEventId]);
+    expect(events).toEqual([{ action: "till.void" }]);
     const { rows: moves } = await db.query("SELECT amount FROM cash_moves WHERE session_id = $1", [sessionId]);
     expect(moves).toEqual([{ amount: 1_000 }]);
     const { rows: customers } = await db.query("SELECT name FROM customers WHERE id = $1", [customerId]);

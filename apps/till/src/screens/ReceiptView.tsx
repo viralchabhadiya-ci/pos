@@ -2,6 +2,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
+import { SendReceipt } from "../components/SendReceipt.js";
+import { receiptUrl } from "../lib/display.js";
 import { db, type DeviceSetup, type LocalOrder, type User } from "../lib/db.js";
 import { money, qtyText } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
@@ -18,7 +20,21 @@ const autoPrinted = new Set<string>();
  * amount and the total including VAT. With a store hub that has a printer, the receipt
  * prints there by itself and a cash sale opens the drawer; otherwise the browser prints.
  */
-export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceSetup; order: LocalOrder; cashier: User; onClose: () => void }) {
+export function ReceiptView({
+  setup,
+  order,
+  cashier,
+  phone = null,
+  onClose,
+}: {
+  setup: DeviceSetup;
+  order: LocalOrder;
+  cashier: User;
+  /** The customer's phone, when they were on the sale, for sending the receipt by WhatsApp. */
+  phone?: string | null;
+  onClose: () => void;
+}) {
+  const link = receiptUrl(setup.publicUrl, order.id);
   const original = useLiveQuery(
     () => (order.refundOfOrderId ? db.orders.get(order.refundOfOrderId) : undefined),
     [order.refundOfOrderId],
@@ -178,6 +194,7 @@ export function ReceiptView({ setup, order, cashier, onClose }: { setup: DeviceS
           {printError}
         </p>
       )}
+      {link && <SendReceipt link={link} orderId={order.id} storeName={setup.store.name} number={order.number} phone={phone} userId={cashier.id} />}
       <div className="actions noprint">
         <button type="button" className="btn outline" onClick={() => (hubPrinter ? void printHere(false) : window.print())}>
           <Icon name="printer" />
