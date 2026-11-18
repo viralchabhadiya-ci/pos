@@ -60,7 +60,7 @@ export function Suppliers() {
         </EmptyState>
       ) : (
         <div className="table-wrap" aria-busy={list.loading}>
-          <table className="table">
+          <table className="table inv-rows">
             <caption className="sr-only">Suppliers</caption>
             <thead>
               <tr>

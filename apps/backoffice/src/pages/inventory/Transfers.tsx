@@ -68,7 +68,7 @@ function TransferList({ me }: { me: Me }) {
       ) : (
         <>
           <div className="table-wrap" aria-busy={list.loading}>
-            <table className="table">
+            <table className="table inv-rows">
               <caption className="sr-only">Transfers</caption>
               <thead>
                 <tr>

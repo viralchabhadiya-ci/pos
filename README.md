@@ -74,6 +74,22 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 - **Reports:** sales by product, category, cashier, payment method or day for any date range, and a
   VAT return view split like the FTA VAT 201 form (standard rated, zero rated, exempt), net of credit
   notes. Every report downloads as CSV.
+- **Inventory:** stock in each store with its value at average cost, and every movement behind it.
+  - *Suppliers:* contacts, TRN, payment terms and delivery time; each product can have several suppliers with
+    their own code and last cost.
+  - *Purchase orders:* draft, mark ordered, receive in one or more deliveries (with the supplier's invoice
+    number), close short or cancel. Receiving books stock in, updates the moving average cost and remembers
+    the supplier's price. Goods that come without an order can be received directly. Orders print.
+  - *Reorder:* products at or below their reorder level (or, without one, below what the last 28 days of
+    sales need over the supplier's delivery time), minus what is already ordered or in transit. Tick and
+    turn them into one draft order per supplier.
+  - *Transfers:* stock leaves the sending store when sent, shows as on its way, and comes in when the other
+    store receives it. Anything that does not arrive is recorded as a difference.
+  - *Stock counts:* the whole store or one category. Each figure is saved as it is typed and stamped with the
+    time, so sales made while counting are not counted twice. Completing writes the corrections.
+  - *Expiry:* products can track expiry dates, asked for when goods arrive. The Expiry tab lists batches
+    expiring soon that are probably still on the shelf (oldest delivery assumed sold first) and writes them off.
+  - *Corrections and write-offs* (expired, damaged, stolen) for several products at once, with a reason.
 - **Products import and export:** a CSV with `name` and `price` plus optional `name_ar`, `category`,
   `barcode`, `extra_barcodes` (separated by `|`), `sku`, `cost`, `vat`, `unit`, `reorder_level`,
   `active`. The file is checked first; nothing is saved if any row has a problem. Rows match existing

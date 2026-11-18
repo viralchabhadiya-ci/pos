@@ -94,7 +94,7 @@ function PoList({ me }: { me: Me }) {
       ) : (
         <>
           <div className="table-wrap" aria-busy={list.loading}>
-            <table className="table">
+            <table className="table inv-rows">
               <caption className="sr-only">Purchase orders</caption>
               <thead>
                 <tr>
@@ -531,7 +531,7 @@ function PoView({ me, id }: { me: Me; id: string }) {
               <tbody>
                 {d.receipts.map((r) => (
                   <tr key={r.id}>
-                    <td className="num">{r.number}</td>
+                    <td className="tnum">{r.number}</td>
                     <td>
                       {dateTime(r.receivedAt)}
                       {r.receivedBy && <span className="cell-sub">{r.receivedBy}</span>}

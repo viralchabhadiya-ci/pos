@@ -51,7 +51,7 @@ function CountList({ me }: { me: Me }) {
         </EmptyState>
       ) : (
         <div className="table-wrap" aria-busy={list.loading}>
-          <table className="table">
+          <table className="table inv-rows">
             <caption className="sr-only">Stock counts</caption>
             <thead>
               <tr>

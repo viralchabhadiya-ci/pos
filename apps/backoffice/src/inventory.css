@@ -42,3 +42,6 @@
   body { background: #fff; color: #000; }
 }
 .narrow-page.wide-page { max-width: 1120px; }
+/* The whole row opens the item; buttons in the row stay on top of the link's hit area. */
+.inv-rows tbody tr { position: relative; cursor: pointer; }
+.inv-rows .actions .btn, .inv-rows a.link { position: relative; z-index: 1; }
