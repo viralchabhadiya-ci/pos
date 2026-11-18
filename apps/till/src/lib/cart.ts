@@ -37,6 +37,8 @@ export interface Cart {
   codes?: string[];
   /** Set when this cart returns items from an earlier sale. */
   refundOfOrderId: string | null;
+  /** On a refund: the original bill's number, for the manager approval and the audit log. */
+  refundOfNumber?: string;
   /** On a refund: what the original sale took in points, the most that goes back as points. */
   refundPointsRoom?: number;
 }

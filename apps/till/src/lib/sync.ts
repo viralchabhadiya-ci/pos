@@ -134,6 +134,7 @@ export async function pushOutbox(): Promise<void> {
     try {
       if (first.kind === "session.open") await request("/sessions/open", { body: first.payload });
       else if (first.kind === "cash.move") await request("/cash-moves", { body: first.payload });
+      else if (first.kind === "till.event") await request("/till-events", { body: first.payload });
       else if (first.kind === "session.close") {
         const { sessionId, ...body } = first.payload as { sessionId: string };
         await request(`/sessions/${sessionId}/close`, { body });

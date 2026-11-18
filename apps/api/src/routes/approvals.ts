@@ -40,6 +40,7 @@ function tillView(r: Record<string, unknown>) {
     summary: r.summary,
     status: r.status,
     decidedBy: r.decided_by_name ?? null,
+    decidedById: r.decided_by ?? null,
     decidedAt: r.decided_at ?? null,
     note: r.decision_note ?? null,
     expiresAt: r.expires_at,
