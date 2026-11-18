@@ -14,7 +14,17 @@ interface SoldLine {
   qty: number;
   unitPrice: number;
   discountBp: number;
+  /** The promotion discount the whole line got on the sale. */
+  promoDiscount: number;
+  promotionId: string | null;
   taxId: string | null;
+}
+
+interface Sale {
+  id: string;
+  number: string;
+  orderDiscountBp: number;
+  lines: SoldLine[];
 }
 
 /**
@@ -23,7 +33,7 @@ interface SoldLine {
  */
 export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => void; onCancel: () => void }) {
   const [number, setNumber] = useState("");
-  const [sale, setSale] = useState<{ id: string; number: string; lines: SoldLine[] } | null>(null);
+  const [sale, setSale] = useState<Sale | null>(null);
   const [picked, setPicked] = useState<Record<number, number>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +47,17 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
         const full = await request<{
           id: string;
           number: string;
-          lines: { name: string; qty: number | string; unit_price: number; variant_id: string; discount_bp: number; tax_id: string | null }[];
+          order_discount_bp?: number;
+          lines: {
+            name: string;
+            qty: number | string;
+            unit_price: number;
+            variant_id: string;
+            discount_bp: number;
+            promo_discount?: number;
+            promotion_id?: string | null;
+            tax_id: string | null;
+          }[];
         }>(`/orders/${hit.id}`);
         const lines = full.lines.map((l) => ({
           variantId: l.variant_id,
@@ -45,16 +65,23 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
           qty: Number(l.qty),
           unitPrice: l.unit_price,
           discountBp: l.discount_bp,
+          promoDiscount: l.promo_discount ?? 0,
+          promotionId: l.promotion_id ?? null,
           taxId: l.tax_id,
         }));
-        setSale({ id: full.id, number: full.number, lines });
+        setSale({ id: full.id, number: full.number, orderDiscountBp: full.order_discount_bp ?? 0, lines });
         setPicked(Object.fromEntries(lines.map((l, i) => [i, l.qty])));
       } catch {
         setError(t("This sale is from another till; connect to the internet to refund it"));
       }
       return;
     }
-    setSale({ id: hit.id, number: hit.number, lines: hit.lines.map((l) => ({ ...l, discountBp: l.discountBp ?? 0 })) });
+    setSale({
+      id: hit.id,
+      number: hit.number,
+      orderDiscountBp: hit.orderDiscountBp ?? 0,
+      lines: hit.lines.map((l) => ({ ...l, discountBp: l.discountBp ?? 0, promoDiscount: l.promoDiscount ?? 0, promotionId: l.promotionId ?? null })),
+    });
     setPicked(Object.fromEntries(hit.lines.map((l, i) => [i, l.qty])));
   };
 
@@ -68,10 +95,24 @@ export function RefundDialog({ onStart, onCancel }: { onStart: (cart: Cart) => v
       .map(({ l, qty }) => {
         const v = variants.get(l.variantId);
         const uom = (v && products.get(v.productId)?.uom) ?? "unit";
-        return { id: crypto.randomUUID(), variantId: l.variantId, name: l.name, unitPrice: l.unitPrice, qty: -qty, discountBp: l.discountBp, taxId: l.taxId, uom };
+        // Items come back at what was paid: their share of any promotion comes back with them.
+        const promoDiscount = l.promoDiscount ? -Math.round((l.promoDiscount * qty) / l.qty) : 0;
+        return {
+          id: crypto.randomUUID(),
+          variantId: l.variantId,
+          name: l.name,
+          unitPrice: l.unitPrice,
+          qty: -qty,
+          discountBp: l.discountBp,
+          promoDiscount,
+          promotionId: l.promotionId,
+          taxId: l.taxId,
+          uom,
+        };
       });
     if (!lines.length) return setError(t("Pick at least one item to return"));
-    onStart({ ...emptyCart(), lines, refundOfOrderId: sale.id });
+    // The sale's own discount on the whole bill applies to what comes back too.
+    onStart({ ...emptyCart(), lines, orderDiscountBp: sale.orderDiscountBp, refundOfOrderId: sale.id });
   };
 
   return (

@@ -1,4 +1,4 @@
-import { checkPayments, formatReceiptNumber, type PaymentInput, type TaxRate } from "@pos/core";
+import { checkPayments, formatReceiptNumber, type AppliedPromotion, type PaymentInput, type TaxRate } from "@pos/core";
 import { request, type DeviceAuth } from "./api.js";
 import type { Cart } from "./cart.js";
 import { cartTotals } from "./cart.js";
@@ -97,6 +97,8 @@ export async function completeOrder(
   cashierId: string,
   /** Made when payment starts, so card payments can point at the order before it exists. */
   orderId: string = crypto.randomUUID(),
+  /** Promotions already worked into the cart's lines (see promoteCart). */
+  promotions: AppliedPromotion[] = [],
 ): Promise<LocalOrder> {
   const setup = await getSetup();
   if (!setup) throw new Error("Device is not paired");
@@ -127,7 +129,13 @@ export async function completeOrder(
       refundOfOrderId: cart.refundOfOrderId,
       orderDiscountBp: cart.orderDiscountBp,
       createdAt: new Date().toISOString(),
-      lines: cart.lines.map(({ uom: _uom, ...l }) => ({ ...l, discountBp: l.discountBp ?? 0 })),
+      lines: cart.lines.map(({ uom: _uom, listPrice: _list, ...l }) => ({
+        ...l,
+        discountBp: l.discountBp ?? 0,
+        promoDiscount: l.promoDiscount ?? 0,
+        promotionId: l.promotionId ?? null,
+      })),
+      promotions: promotions.map((p) => ({ promotionId: p.promotionId, name: p.name, amount: p.amount, code: p.code })),
       payments,
       clientTotals: { subtotalNet: totals.subtotalNet, taxTotal: totals.taxTotal, total: totals.total },
       totals,

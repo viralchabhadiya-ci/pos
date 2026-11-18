@@ -85,7 +85,7 @@ export async function salesRoutes(app: FastifyInstance) {
     if (!order) throw notFound("Bill");
     const lines = await app.db.query(
       `SELECT line_no AS "lineNo", name, qty, unit_price AS "unitPrice", discount_bp AS "discountBp",
-              line_discount + order_discount AS discount, tax_rate_bp AS "taxRateBp", net, tax, gross, note
+              line_discount + promo_discount + order_discount AS discount, tax_rate_bp AS "taxRateBp", net, tax, gross, note
          FROM order_lines WHERE order_id = $1 ORDER BY line_no`,
       [order.id],
     );
@@ -94,7 +94,12 @@ export async function salesRoutes(app: FastifyInstance) {
          FROM payments p JOIN payment_methods m ON m.id = p.method_id WHERE p.order_id = $1`,
       [order.id],
     );
-    return { ...order, lines: lines.rows, payments: payments.rows };
+    const promotions = await app.db.query(
+      `SELECT op.promotion_id AS "promotionId", p.name, op.code, op.amount
+         FROM order_promotions op JOIN promotions p ON p.id = op.promotion_id WHERE op.order_id = $1 ORDER BY p.name`,
+      [order.id],
+    );
+    return { ...order, lines: lines.rows, payments: payments.rows, promotions: promotions.rows };
   });
 
   /**

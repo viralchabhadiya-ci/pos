@@ -107,6 +107,31 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 
 Every change is written to the audit log with who made it.
 
+### Promotions, coupons and price lists
+
+Promotions are set up in the back office (Promotions) and applied by the till by itself, offline too.
+
+- **Kinds:** percent off items, buy X get Y (the cheapest units are the discounted ones; 100% makes them
+  free), multi-buy (3 for AED 10), and percent or amount off the bill from a minimum spend.
+- **Targets and timing:** all products, categories or chosen products; start and end dates, days of the
+  week, happy-hour times in the store's timezone (an end before the start runs past midnight), and stores.
+- **Rules at the till:** each item gets at most one item promotion, the lowest priority number first,
+  then the single best bill promotion. Lines with a hand discount or price change, and returns, take no
+  promotion; a hand discount on the whole bill turns bill promotions off. Discounts never stack by accident.
+- **Coupons:** a promotion with a code applies only when the cashier enters it (Coupon, above the cart).
+  The till checks codes against what it has synced. A use limit stops a coupon once reached; a till that
+  was offline can still ring a few more up before it syncs, and those sales stand.
+- **Customer on the sale:** Customer, above the cart, finds a customer by name or the last digits of their
+  phone, or adds one.
+- **Price lists:** other prices for some products (Price lists). Give a list to a customer (Customers) or
+  a store (Settings). On the till a customer's list wins over the store's; other products keep their price.
+  A line whose price was changed by hand keeps it.
+- **Refunds** carry each item's share of the promotions it was sold with, so a customer gets back what they
+  paid. The server checks this and writes a short refund to the audit log. The bill's own hand discount
+  applies to the refund too.
+- **Figures:** each promotion shows its uses and the discount given; bills and receipts list the
+  promotions used. Hand discounts stay in the audit log as before; promotions do not.
+
 ### New businesses and plans
 
 - **Sign-up:** *Start a free trial* on the back office sign-in page (`#/signup`). One form creates the
@@ -276,5 +301,5 @@ the real API, switch it off mid-shift, and check that every sale reaches it exac
 
 ## Next
 
-Real card terminal providers, online subscription billing, loyalty and gift cards, web push for the owner app, purchasing,
+Real card terminal providers, online subscription billing, loyalty, gift cards and store credit, web push for the owner app, purchasing,
 Windows/Android packaging. See the roadmap in the PRD.

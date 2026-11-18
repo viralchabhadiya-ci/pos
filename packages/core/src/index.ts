@@ -4,3 +4,4 @@ export * from "./payments.js";
 export * from "./receipt.js";
 export * from "./schemas.js";
 export * from "./display.js";
+export * from "./promotions.js";

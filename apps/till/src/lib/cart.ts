@@ -1,14 +1,38 @@
-import { normalizeQty, priceOrder, type LineInput, type OrderTotals, type TaxRate } from "@pos/core";
+import {
+  applyPromotions,
+  normalizeQty,
+  priceOrder,
+  type AppliedPromotion,
+  type LineInput,
+  type OrderTotals,
+  type Promotion,
+  type TaxRate,
+} from "@pos/core";
 
 export interface CartLine extends LineInput {
   uom: "unit" | "kg";
   note?: string;
+  /**
+   * The price the till picked (the product's, or from a price list). A unitPrice that differs
+   * was changed by hand: such a line keeps its price and takes no promotion.
+   */
+  listPrice?: number;
+}
+
+export interface CartCustomer {
+  id: string;
+  name: string;
+  phone: string | null;
+  priceListId: string | null;
 }
 
 export interface Cart {
   lines: CartLine[];
   orderDiscountBp: number;
   customerId: string | null;
+  customer?: CartCustomer | null;
+  /** Coupon codes the cashier entered, upper case. */
+  codes?: string[];
   /** Set when this cart returns items from an earlier sale. */
   refundOfOrderId: string | null;
 }
@@ -39,6 +63,7 @@ export function addItem(cart: Cart, item: SellableItem, qty = 1, newId: () => st
     discountBp: 0,
     taxId: item.taxId,
     uom: item.uom,
+    listPrice: item.price,
   };
   return { ...cart, lines: [...cart.lines, line] };
 }
@@ -53,6 +78,81 @@ export function updateLine(cart: Cart, id: string, patch: Partial<Pick<CartLine,
 
 export function removeLine(cart: Cart, id: string): Cart {
   return { ...cart, lines: cart.lines.filter((l) => l.id !== id) };
+}
+
+/** Whether the cashier changed the line's price or discount by hand. */
+export const isManual = (l: CartLine) => !!l.discountBp || (l.listPrice !== undefined && l.unitPrice !== l.listPrice);
+
+/**
+ * Puts each line at its list price (the customer's or store's price list, else the
+ * product's own). Lines whose price was changed by hand keep it.
+ */
+export function repriceCart(cart: Cart, priceOf: (variantId: string) => number | undefined): Cart {
+  let changed = false;
+  const lines = cart.lines.map((l) => {
+    if (l.listPrice !== undefined && l.unitPrice !== l.listPrice) return l;
+    const price = priceOf(l.variantId);
+    if (price === undefined || (price === l.unitPrice && price === l.listPrice)) return l;
+    changed = true;
+    return { ...l, unitPrice: price, listPrice: price };
+  });
+  return changed ? { ...cart, lines } : cart;
+}
+
+export function setCustomer(cart: Cart, customer: CartCustomer | null): Cart {
+  return { ...cart, customer, customerId: customer?.id ?? null };
+}
+
+export function addCode(cart: Cart, code: string): Cart {
+  const c = code.trim().toUpperCase();
+  const codes = cart.codes ?? [];
+  return !c || codes.includes(c) ? cart : { ...cart, codes: [...codes, c] };
+}
+
+export function removeCode(cart: Cart, code: string): Cart {
+  return { ...cart, codes: (cart.codes ?? []).filter((c) => c !== code) };
+}
+
+export interface PromoEnv {
+  promotions: Promotion[];
+  /** Product and category of each variant, to match promotion targets. */
+  products: Map<string, { productId: string; categoryId: string | null }>;
+  storeId: string;
+  timezone: string;
+}
+
+export interface PromotedCart {
+  /** The cart with each line's promotion discount filled in. */
+  cart: Cart;
+  applied: AppliedPromotion[];
+  unknownCodes: string[];
+}
+
+/**
+ * Works out the promotions on a sale. A refund keeps the promotion share it was given from
+ * the original sale, so it is left as it is.
+ */
+export function promoteCart(cart: Cart, env: PromoEnv, now = new Date()): PromotedCart {
+  if (cart.refundOfOrderId) return { cart, applied: [], unknownCodes: [] };
+  const res = applyPromotions(
+    cart.lines.map((l) => {
+      const p = env.products.get(l.variantId);
+      return {
+        id: l.id,
+        variantId: l.variantId,
+        productId: p?.productId ?? null,
+        categoryId: p?.categoryId ?? null,
+        unitPrice: l.unitPrice,
+        qty: l.qty,
+        uom: l.uom,
+        manual: isManual(l),
+      };
+    }),
+    env.promotions,
+    { now, timezone: env.timezone, storeId: env.storeId, codes: cart.codes ?? [], orderPromotions: !cart.orderDiscountBp },
+  );
+  const lines = cart.lines.map((l) => ({ ...l, promoDiscount: res.lines[l.id]?.discount ?? 0, promotionId: res.lines[l.id]?.promotionId ?? null }));
+  return { cart: { ...cart, lines }, applied: res.applied, unknownCodes: res.unknownCodes };
 }
 
 export function cartTotals(cart: Cart, taxes: Record<string, TaxRate>): OrderTotals {

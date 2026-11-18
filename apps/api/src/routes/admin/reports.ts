@@ -39,7 +39,7 @@ interface Column {
 const SALES: Record<z.infer<typeof SalesSchema>["groupBy"], { sql: string; columns: Column[] }> = {
   product: {
     sql: `SELECT ol.variant_id AS id, MAX(ol.name) AS name, MAX(c.name) AS category, SUM(ol.qty)::float AS qty,
-                 SUM(ol.line_discount + ol.order_discount)::int AS discount, SUM(ol.net)::int AS net,
+                 SUM(ol.line_discount + ol.promo_discount + ol.order_discount)::int AS discount, SUM(ol.net)::int AS net,
                  SUM(ol.tax)::int AS tax, SUM(ol.gross)::int AS total
             FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
             JOIN variants v ON v.id = ol.variant_id JOIN products p ON p.id = v.product_id

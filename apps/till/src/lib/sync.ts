@@ -50,15 +50,23 @@ export async function pullCatalog() {
     variants: never[];
     paymentMethods: never[];
     users: never[];
+    promotions?: never[];
+    priceLists?: never[];
+    priceListItems?: never[];
     store?: DeviceSetup["store"] | null;
   }>(`/sync/catalog${query}`);
-  await db.transaction("rw", [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.meta], async () => {
+  const tables = [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.promotions, db.priceLists, db.priceListItems, db.meta];
+  await db.transaction("rw", tables, async () => {
     await db.taxes.bulkPut(data.taxes);
     await db.categories.bulkPut(data.categories);
     await db.products.bulkPut(data.products);
     await db.variants.bulkPut(data.variants);
     await db.paymentMethods.bulkPut(data.paymentMethods);
     await db.users.bulkPut(data.users);
+    // A hub that has not been updated yet sends none of these.
+    await db.promotions.bulkPut(data.promotions ?? []);
+    await db.priceLists.bulkPut(data.priceLists ?? []);
+    await db.priceListItems.bulkPut(data.priceListItems ?? []);
     await db.setMeta("catalogSince", data.serverTime);
     if (data.store) {
       // Receipt details edited in the back office (name, TRN, footer, rounding).
