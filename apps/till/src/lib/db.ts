@@ -42,7 +42,7 @@ export interface Variant {
   price: number;
   active: boolean;
 }
-export interface PaymentMethod { id: string; name: string; kind: "cash" | "card" | "card_manual" | "gift_card" | "points"; active: boolean }
+export interface PaymentMethod { id: string; name: string; kind: "cash" | "card" | "card_manual" | "gift_card" | "points" | "delivery"; active: boolean }
 export interface User { id: string; name: string; role: "cashier" | "manager" | "owner"; pinSalt: string; pinHash: string; active: boolean }
 export interface PriceList { id: string; name: string; active: boolean }
 /** id is "priceListId:variantId". */

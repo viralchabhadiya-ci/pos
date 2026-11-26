@@ -68,6 +68,9 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     if (p.kind === "gift_card" && !p.giftCardCode) throw reject("bad_payment", "A gift card payment needs the card number");
     if (p.kind === "points" && !p.points) throw reject("bad_payment", "A points payment needs the number of points");
   }
+  if (order.payments.some((p) => p.kind === "delivery") && !order.webOrderId && !order.refundOfOrderId) {
+    throw reject("bad_payment", "Only a delivery platform's order is paid by the platform");
+  }
 
   const promoIds = [
     ...new Set([...order.lines.map((l) => l.promotionId), ...order.promotions.map((p) => p.promotionId)].filter((id): id is string => !!id)),

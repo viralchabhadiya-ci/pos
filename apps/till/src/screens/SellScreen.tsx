@@ -444,7 +444,8 @@ export function SellScreen({ setup, user, session }: Props) {
   const finish = (order: LocalOrder) => {
     // In a restaurant, a sale paid at the counter (not on a table) goes to the kitchen as it is paid.
     // Items of a split part the kitchen hasn't had yet go to it under the table's name.
-    if ((restaurant || cart.kioskNumber) && !isRefund && !cart.tabId) {
+    // A delivery order's kitchen ticket went out when it was accepted.
+    if ((restaurant || cart.kioskNumber) && !isRefund && !cart.tabId && !cart.delivery) {
       const lines = kitchenLines({ ...cart, kitchenVoids: [] });
       const label = split
         ? tabLabel(split.rest)
@@ -576,10 +577,10 @@ export function SellScreen({ setup, user, session }: Props) {
             <Icon name="refund" />
             {t("Refund")}
           </button>
-          {(webOrders.orders?.length ?? 0) > 0 && (
+          {((webOrders.orders?.length ?? 0) > 0 || webOrders.delivery) && (
             <button type="button" className="btn outline" onClick={() => setShowWebOrders(true)}>
               <Icon name="online" />
-              {t("Online orders")} <span className={newWebOrders ? "count" : "count quiet"}>{webOrders.orders!.length}</span>
+              {t("Online orders")} <span className={newWebOrders ? "count" : "count quiet"}>{webOrders.orders?.length ?? 0}</span>
             </button>
           )}
         </div>
@@ -633,7 +634,9 @@ export function SellScreen({ setup, user, session }: Props) {
           <h2>
             {isRefund
               ? t("Refund")
-              : cart.webOrderNumber
+              : cart.delivery
+                ? `${cart.delivery.name} ${cart.delivery.code}`
+                : cart.webOrderNumber
                 ? t("Online order {n}", { n: cart.webOrderNumber })
                 : cart.tabId
                   ? tabLabel(cart)
@@ -963,6 +966,7 @@ export function SellScreen({ setup, user, session }: Props) {
           orders={webOrders.orders}
           error={webOrders.error}
           reload={webOrders.reload}
+          offset={webOrders.offset}
           items={items ?? []}
           userId={user.id}
           busy={cart.lines.length > 0}

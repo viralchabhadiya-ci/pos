@@ -63,6 +63,8 @@ const HQ_WRITE = [
   /^\/modifier-groups(\/|$)/,
   // The shop's settings and which products it sells; orders are handled by each store.
   /^\/online-store(\/|$)/,
+  // Contracts with delivery platforms (commission, secrets) are HQ's; busy and sold-out are each store's.
+  /^\/delivery-channels(\/|$)/,
 ];
 
 /**

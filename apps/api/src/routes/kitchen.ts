@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { readyOrder } from "../delivery/platform.js";
 import { HttpError } from "../errors.js";
 
 /** Tickets done longer ago than this drop off the screen's "Recall" list. */
@@ -7,7 +8,7 @@ const RECALL_MINUTES = 60;
 
 const TICKET_SELECT = `SELECT k.id, k.tab_id AS "tabId", k.label, k.guests, k.lines, k.done_lines AS "doneLines", k.status,
          k.created_at AS "createdAt", k.started_at AS "startedAt", k.ready_at AS "readyAt", k.done_at AS "doneAt",
-         u.name AS "createdBy", r.name AS "registerName"
+         u.name AS "createdBy", r.name AS "registerName", k.cancelled_at AS "cancelledAt"
     FROM kitchen_tickets k LEFT JOIN users u ON u.id = k.created_by LEFT JOIN registers r ON r.id = k.register_id`;
 
 const StatusSchema = z.object({ status: z.enum(["new", "preparing", "ready", "done"]) });
@@ -45,10 +46,16 @@ export async function kitchenRoutes(app: FastifyInstance) {
               ready_at = CASE WHEN $3 IN ('ready', 'done') THEN COALESCE(ready_at, now()) WHEN $3 IN ('new', 'preparing') THEN NULL ELSE ready_at END,
               done_at = CASE WHEN $3 = 'done' THEN now() ELSE NULL END,
               done_lines = CASE WHEN $3 IN ('ready', 'done') THEN ARRAY(SELECT jsonb_array_elements(lines)->>'lineId') ELSE done_lines END
-        WHERE id = $1 AND store_id = $2 RETURNING id`,
+        WHERE id = $1 AND store_id = $2 RETURNING id, web_order_id`,
       [id, device.storeId, status],
     );
     if (!rows[0]) throw new HttpError(404, "not_found", "Ticket not found");
+    // A delivery order's food is ready: the platform sends the rider.
+    if (status === "ready" && rows[0].web_order_id) {
+      await readyOrder(app.db, { tenantId: device.tenantId, storeIds: [device.storeId], userId: null }, rows[0].web_order_id).catch((err) => {
+        if (!(err instanceof HttpError)) throw err;
+      });
+    }
     return (await app.db.query(`${TICKET_SELECT} WHERE k.id = $1`, [id])).rows[0];
   });
 

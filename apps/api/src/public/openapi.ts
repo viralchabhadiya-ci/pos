@@ -94,7 +94,7 @@ const schemas: Record<string, Schema> = {
   }),
   Payment: obj({
     id: uuid(),
-    kind: str("How it was paid", { enum: ["cash", "card", "card_manual", "gift_card", "points"] }),
+    kind: str("How it was paid", { enum: ["cash", "card", "card_manual", "gift_card", "points", "delivery"] }),
     method: str("The payment method's name"),
     amount: fils("Amount paid"),
     tendered: nint("Cash handed over"),

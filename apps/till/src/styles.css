@@ -513,7 +513,29 @@ small.block { display: block; }
 .web-order .badge.new { background: var(--accent); color: var(--on-accent); }
 .web-order .badge.ready { background: var(--good-soft); color: var(--good); }
 .web-order-note { font-style: italic; }
-.web-order-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-2); }
+.web-order-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); justify-content: flex-end; margin-top: var(--space-2); }
+.web-order.delivery { box-shadow: inset 4px 0 0 var(--line-strong); }
+.web-order.delivery.new { box-shadow: inset 4px 0 0 var(--accent); }
+.web-order-due { font-weight: 700; color: var(--bad); font-size: var(--text-sm); }
+.web-order-who .icon { vertical-align: -3px; }
+.web-order-warn { display: flex; gap: var(--space-2); align-items: flex-start; margin: var(--space-1) 0 0; color: var(--bad); font-size: var(--text-sm); }
+.prep-pick { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); white-space: nowrap; }
+.prep-pick select { min-height: 44px; }
+.turn-down { margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); display: grid; gap: var(--space-2); }
+.turn-down-reasons { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* Delivery platforms: Busy and Sold out */
+.delivery-bar { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); margin-top: var(--space-2); display: grid; gap: var(--space-2); }
+.delivery-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.delivery-bar-tools { margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.delivery-open { color: var(--good); }
+.delivery-busy { color: var(--bad); }
+.delivery-panel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.delivery-panel.column { display: grid; }
+.delivery-panel input[type="search"] { width: 100%; min-height: 44px; }
+.sold-out-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.sold-out-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) 0; border-bottom: 1px solid var(--line); }
+.sold-out-for { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .tnum { font-variant-numeric: tabular-nums; }
 
 /* Restaurant: modifiers */
@@ -595,6 +617,9 @@ small.block { display: block; }
 .kds-ticket.new { border-color: var(--accent); }
 .kds-ticket.warn { border-color: var(--warn); }
 .kds-ticket.late { border-color: var(--bad); }
+.kds-ticket.cancelled { border-color: var(--bad); opacity: .85; }
+.kds-ticket.cancelled .kds-lines { text-decoration: line-through; }
+.kds-cancelled { display: flex; align-items: center; gap: var(--space-2); margin: 0; padding: var(--space-2); border-radius: var(--radius-sm); background: var(--bad-soft); color: var(--bad); font-weight: 700; }
 .kds-ticket.ready { border-color: var(--good); opacity: 0.85; }
 .kds-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); padding: var(--space-3) var(--space-3) 0; }
 .kds-label { font-size: 22px; font-weight: 800; overflow-wrap: anywhere; }

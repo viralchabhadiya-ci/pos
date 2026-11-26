@@ -59,6 +59,8 @@ export interface Cart {
   /** An online (click-and-collect) order this sale hands over. */
   webOrderId?: string | null;
   webOrderNumber?: string;
+  /** A delivery platform's order, paid on the platform: "Talabat 1234". */
+  delivery?: { name: string; code: string };
   /** A kiosk order: once paid it goes to the kitchen under the number the guest holds. */
   kioskNumber?: number;
   /** Restaurants: the open bill (tab) this sale is, and its table. */

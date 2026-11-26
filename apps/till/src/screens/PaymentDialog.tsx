@@ -51,7 +51,10 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
   const pointsRefunded = payments.reduce((s, p) => s + (p.kind === "points" && p.amount < 0 ? -p.amount : 0), 0);
   const pointsRoom = Math.max(0, (cart.refundPointsRoom ?? 0) - pointsRefunded);
   // Points show while the programme is on, and on a refund of a sale paid with points.
-  const shown = methods.filter((m) => m.kind !== "points" || (refund ? pointsRoom > 0 : loyalty.enabled));
+  // A delivery platform's order is paid on the platform, and only such an order is (refunds aside).
+  const shown = methods.filter((m) =>
+    cart.delivery ? m.kind === "delivery" : (m.kind !== "delivery" || refund) && (m.kind !== "points" || (refund ? pointsRoom > 0 : loyalty.enabled)),
+  );
 
   useEffect(() => {
     loadTerminal()
@@ -89,6 +92,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
         kind: method.kind,
         amount,
         tendered: method.kind === "cash" && !refund ? tendered : undefined,
+        ...(method.kind === "delivery" && cart.delivery ? { reference: `${cart.delivery.name} ${cart.delivery.code}` } : {}),
       },
     ]);
     setEntry("");
@@ -181,7 +185,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
           <ul className="paylist">
             {payments.map((p) => (
               <li key={p.id}>
-                <Icon name={p.kind === "cash" ? "cash" : p.kind === "gift_card" ? "gift" : p.kind === "points" ? "star" : "card"} />
+                <Icon name={p.kind === "cash" ? "cash" : p.kind === "gift_card" ? "gift" : p.kind === "points" ? "star" : p.kind === "delivery" ? "bike" : "card"} />
                 <span>{paymentLabel(t(methods.find((m) => m.id === p.methodId)?.name ?? ""), p)}</span>
                 <span className="amt">{money(p.amount)}</span>
                 {p.cardTransactionId ? (
@@ -230,7 +234,20 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
               onCancel={() => setStored(null)}
             />
           )}
-          {!check.complete && !stored && (
+          {!check.complete && !stored && cart.delivery && (
+            <>
+              <p className="muted">{t("The customer paid {platform}. Record it as paid by the platform.", { platform: cart.delivery.name })}</p>
+              <div className="methods">
+                {shown.map((m) => (
+                  <button key={m.id} type="button" className="btn method" onClick={() => void addPayment(m)} autoFocus>
+                    <Icon name="bike" />
+                    {t(m.name)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {!check.complete && !stored && !cart.delivery && (
             <>
               <label htmlFor="tendered">{t(refund ? "Refund amount" : "Amount received")}</label>
               <input
@@ -247,7 +264,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
               <p id="tendered-help" className="muted" style={{ marginTop: 8, fontSize: 14 }}>
                 {t(refund ? "Refunds go back in full to the method you pick." : "Leave empty to pay exactly what is due, or tap a note.")}
               </p>
-              {!refund && (
+              {!refund && !cart.delivery && (
                 <div className="quick">
                   {QUICK_CASH.filter((q) => q >= dueIfCash).slice(0, 4).map((q) => {
                     const cash = methods.find((m) => m.kind === "cash");
@@ -262,7 +279,7 @@ export function PaymentDialog({ setup, cart, promotions = [], total, cashierId, 
               <div className="methods">
                 {shown.map((m) => (
                   <button key={m.id} type="button" className="btn method" onClick={() => void addPayment(m)}>
-                    <Icon name={m.kind === "cash" ? "cash" : m.kind === "gift_card" ? "gift" : m.kind === "points" ? "star" : "card"} />
+                    <Icon name={m.kind === "cash" ? "cash" : m.kind === "gift_card" ? "gift" : m.kind === "points" ? "star" : m.kind === "delivery" ? "bike" : "card"} />
                     {t(m.name)}
                     {m.kind === "card" && terminal?.terminal && <span className="method-note">{t("on {terminal}", { terminal: terminal.terminal.name })}</span>}
                   </button>
