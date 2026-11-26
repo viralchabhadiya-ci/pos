@@ -86,6 +86,14 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
 - **Reports:** sales by product, category, cashier, payment method or day for any date range, and a
   VAT return view split like the FTA VAT 201 form (standard rated, zero rated, exempt), net of credit
   notes. Every report downloads as CSV.
+  - *Margins* (by product or category): net sales, cost, gross profit and margin. Each sold line keeps the
+    product's cost at the moment of sale, so later cost changes do not rewrite past margins. Products with
+    no cost show a dash and stay out of the margin.
+  - *Cashier performance:* bills, average bill, items per bill, discount rate, refunds, voids, drawer opens
+    with no sale, shift hours and sales per hour.
+  - *Scheduled:* the owner can email any report daily (yesterday), every Monday (the week before) or on the
+    1st (last month), at a chosen hour, with the CSV attached. Failed sends are retried; *Send now* sends the
+    last finished period straight away. Needs `SMTP_URL` for real emails.
 - **Inventory:** stock in each store with its value at average cost, and every movement behind it.
   - *Suppliers:* contacts, TRN, payment terms and delivery time; each product can have several suppliers with
     their own code and last cost.
