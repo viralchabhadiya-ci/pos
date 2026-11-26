@@ -2,7 +2,7 @@ import { formatMoney, maskGiftCard } from "@pos/core";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
-const esc = (s: unknown) =>
+export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const Id = z.string().uuid();
@@ -107,7 +107,7 @@ export async function receiptPageRoutes(app: FastifyInstance) {
   });
 }
 
-function page(title: string, body: string) {
+export function page(title: string, body: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><title>${esc(title)}</title><style>
 :root{color-scheme:light dark;--bg:#f3f5f4;--card:#fff;--fg:#111a19;--muted:#4f5d5b;--line:#d3dcda;--accent:#0b6158}
