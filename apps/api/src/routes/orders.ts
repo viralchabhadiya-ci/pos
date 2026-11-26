@@ -119,13 +119,13 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     const src = order.lines[i]!;
     await tx.query(
       `INSERT INTO order_lines (id, order_id, line_no, variant_id, name, qty, unit_price, discount_bp,
-         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id, gift_card_code, unit_cost)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id, gift_card_code, modifiers, unit_cost)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
                (SELECT cost FROM variants WHERE id = $4))`,
       [
         l.id, order.id, i + 1, l.variantId, l.name, l.qty, l.unitPrice, l.discountBp ?? 0, l.lineDiscount,
         l.orderDiscount, l.taxId, l.taxId ? taxes[l.taxId]!.rateBp : null, l.net, l.tax, l.gross, src.note ?? null,
-        l.promoDiscount, l.promotionId ?? null, src.giftCardCode ?? null,
+        l.promoDiscount, l.promotionId ?? null, src.giftCardCode ?? null, src.modifiers?.length ? JSON.stringify(src.modifiers) : null,
       ],
     );
     if (src.giftCardCode) {
@@ -170,6 +170,7 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
   if (!isRefund) await recordPromotions(tx, device, order, totals.lines.reduce((s, l) => s + l.promoDiscount, 0));
 
   if (order.webOrderId && !isRefund) await handOverWebOrder(tx, device, order.id, order.webOrderId, order.cashierId);
+  if (order.tabId && !isRefund) await closeTabForOrder(tx, device, order.id, order.tabId, order.cashierId);
 
   // Webhooks go out once the order is saved; the payload is the same one GET /v1/orders/:id returns.
   await emitEvent(tx, device.tenantId, isRefund ? "order.refunded" : "order.created", async () => loadOrder(tx, device.tenantId, order.id));
@@ -471,6 +472,25 @@ export async function orderRoutes(app: FastifyInstance) {
     );
     return { orders: rows };
   });
+}
+
+/**
+ * The table's bill was paid. The till closes the tab as soon as it can; this catches sales
+ * that synced later, and logs a tab paid twice instead of refusing the sale.
+ */
+async function closeTabForOrder(tx: Tx, device: DeviceContext, orderId: string, tabId: string, cashierId: string) {
+  const { rows } = await tx.query("SELECT id, status, order_id FROM tabs WHERE id = $1 AND tenant_id = $2 FOR UPDATE", [tabId, device.tenantId]);
+  const tab = rows[0];
+  if (!tab) return;
+  await tx.query("UPDATE orders SET tab_id = $2 WHERE id = $1", [orderId, tab.id]);
+  if (tab.order_id && tab.order_id !== orderId) {
+    await audit(tx, device, cashierId, "tab.paid_twice", "tab", tab.id, { orderId, earlier: tab.order_id });
+    return;
+  }
+  await tx.query(
+    "UPDATE tabs SET status = 'paid', order_id = $2, closed_at = COALESCE(closed_at, now()), updated_by = $3, updated_at = now() WHERE id = $1",
+    [tab.id, orderId, cashierId],
+  );
 }
 
 /**

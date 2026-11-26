@@ -59,6 +59,8 @@ const HQ_WRITE = [
   /^\/campaigns(\/|$)/,
   // Signage playlists and pictures are the business's; each store looks after its screens.
   /^\/signage\/(playlists|media)(\/|$)/,
+  // Modifiers belong to the business's products; each store lays out its own tables.
+  /^\/modifier-groups(\/|$)/,
   // The shop's settings and which products it sells; orders are handled by each store.
   /^\/online-store(\/|$)/,
 ];

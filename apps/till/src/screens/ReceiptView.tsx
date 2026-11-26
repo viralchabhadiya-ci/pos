@@ -123,6 +123,14 @@ export function ReceiptView({
               {l.name}
               {l.giftCardCode && ` ${maskGiftCard(l.giftCardCode)} · outside the scope of VAT`}
             </div>
+            {order.lines
+              .find((x) => x.id === l.id)
+              ?.modifiers?.map((m, i) => (
+                <div key={i} className="r-mod">
+                  + {m.name}
+                  {m.price ? ` ${money(m.price)}` : ""}
+                </div>
+              ))}
             <div className="r-row">
               <span>
                 {qtyText(Math.abs(l.qty), uomOf(l.qty))} × {money(l.unitPrice)}

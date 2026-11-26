@@ -7,6 +7,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** The whole error body, for answers that carry more (a tab as it is now). */
+    public data?: unknown,
   ) {
     super(message);
   }
@@ -38,6 +40,6 @@ export async function request<T>(path: string, init: { method?: string; body?: u
   }
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? res.statusText, data);
   return data as T;
 }

@@ -11,8 +11,24 @@ export interface Product {
   nameAr: string | null;
   uom: "unit" | "kg";
   taxId: string | null;
+  /** Modifier groups offered when the item is added (restaurants). */
+  modifierGroupIds?: string[];
   active: boolean;
 }
+export interface ModifierOption { id: string; name: string; nameAr: string | null; price: number }
+export interface ModifierGroup {
+  id: string;
+  name: string;
+  nameAr: string | null;
+  /** Must pick at least this many; may pick up to maxChoices (0: any number). */
+  minChoices: number;
+  maxChoices: number;
+  options: ModifierOption[];
+  sort: number;
+  active: boolean;
+}
+/** A restaurant table in this till's store. */
+export interface DiningTable { id: string; area: string; name: string; seats: number; sort: number; active: boolean }
 export interface Variant {
   id: string;
   productId: string;
@@ -90,7 +106,7 @@ export interface LocalOrder extends OrderSync {
   pointsEarned?: number;
 }
 
-export type OutboxKind = "session.open" | "cash.move" | "order" | "session.close" | "till.event";
+export type OutboxKind = "session.open" | "cash.move" | "order" | "session.close" | "till.event" | "kitchen.ticket";
 export interface OutboxItem {
   seq?: number;
   kind: OutboxKind;
@@ -149,6 +165,8 @@ export class TillDb extends Dexie {
   promotions!: Table<Promotion, string>;
   priceLists!: Table<PriceList, string>;
   priceListItems!: Table<PriceListItem, string>;
+  modifierGroups!: Table<ModifierGroup, string>;
+  diningTables!: Table<DiningTable, string>;
 
   constructor(name = "pos-till") {
     super(name);
@@ -168,6 +186,7 @@ export class TillDb extends Dexie {
     this.version(2).stores({ parked: "id, createdAt" });
     this.version(3).stores({ cardAttempts: "id, orderId, createdAt" });
     this.version(4).stores({ promotions: "id", priceLists: "id", priceListItems: "id, priceListId" });
+    this.version(5).stores({ modifierGroups: "id", diningTables: "id" });
   }
 
   async getMeta<T>(key: string): Promise<T | undefined> {

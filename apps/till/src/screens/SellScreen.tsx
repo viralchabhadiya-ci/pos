@@ -42,6 +42,15 @@ import { ReceiptView } from "./ReceiptView.js";
 import { RefundDialog } from "./RefundDialog.js";
 import { useWebOrders, WebOrdersDialog } from "./WebOrdersDialog.js";
 import { useSyncStatus } from "../lib/useSync.js";
+import { OfflineError } from "../lib/api.js";
+import { kitchenDoc, printOnHub } from "../lib/print.js";
+import { queueKitchenTicket } from "../lib/till.js";
+import { cartOf, closeTab, kitchenLines, markSent, saveTab, tabLabel, TabConflict, useTabs, voidSent, type RemoteTab } from "../lib/tabs.js";
+import type { DiningTable, ModifierGroup } from "../lib/db.js";
+import type { LineModifier } from "../lib/cart.js";
+import { FloorDialog } from "./FloorDialog.js";
+import { ModifierDialog } from "./ModifierDialog.js";
+import { SplitDialog, splitCart } from "./SplitDialog.js";
 
 type PadMode = "qty" | "disc" | "price";
 const MODE_LABEL: Record<PadMode, string> = { qty: "Qty", disc: "% Disc", price: "Price" };
@@ -75,7 +84,17 @@ export function SellScreen({ setup, user, session }: Props) {
   const [showCoupon, setShowCoupon] = useState(false);
   const [showGiftCard, setShowGiftCard] = useState(false);
   const [showWebOrders, setShowWebOrders] = useState(false);
-  const { online } = useSyncStatus();
+  const [showFloor, setShowFloor] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  // While one guest pays their part: the whole bill before, and what stays on the table.
+  const [split, setSplit] = useState<{ before: Cart; rest: Cart } | null>(null);
+  const [choosing, setChoosing] = useState<{ item: SellableItem; groups: ModifierGroup[] } | null>(null);
+  const { online, hub } = useSyncStatus();
+  const diningTables = useLiveQuery(() => db.diningTables.filter((x) => x.active).toArray(), []) ?? [];
+  const modifierGroups = useLiveQuery(async () => new Map((await db.modifierGroups.toArray()).filter((g) => g.active).map((g) => [g.id, g])), []);
+  const restaurant = diningTables.length > 0;
+  const tabs = useTabs(restaurant, online);
   const webOrders = useWebOrders(online);
   const newWebOrders = webOrders.orders?.filter((o) => o.status === "new").length ?? 0;
   const loyalty = useLoyalty();
@@ -110,6 +129,7 @@ export function SellScreen({ setup, user, session }: Props) {
           sku: v.sku,
           plu: v.plu ?? null,
           categoryId: p.categoryId,
+          modifierGroupIds: p.modifierGroupIds ?? [],
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -205,10 +225,12 @@ export function SellScreen({ setup, user, session }: Props) {
     setShowParked(false);
   };
 
-  const add = (item: SellableItem, qty = 1) => {
+  const add = (item: SellableItem & { modifierGroupIds?: string[] }, qty = 1, mods?: LineModifier[]) => {
     if (isRefund) return setNotice(t("Finish or clear the refund before adding items"));
     if (item.uom === "kg" && qty === 1) return setWeighing(item);
-    const next = addItem(cart, item, qty);
+    const groups = (item.modifierGroupIds ?? []).map((id) => modifierGroups?.get(id)).filter((g): g is ModifierGroup => !!g);
+    if (!mods && groups.length) return setChoosing({ item, groups });
+    const next = addItem(cart, item, qty, undefined, mods);
     setCart(next);
     setSelected(next.lines.find((l) => l.variantId === item.variantId && l.qty >= qty)?.id ?? next.lines.at(-1)!.id);
     setEntry("");
@@ -232,6 +254,115 @@ export function SellScreen({ setup, user, session }: Props) {
   useScanner(scan);
 
   const selectedLine = cart.lines.find((l) => l.id === selected);
+
+  /**
+   * Saves the table's bill for the other tills. If another till changed it meanwhile, both
+   * sets of items are kept. Returns false when it could not be saved.
+   */
+  const persistTab = async (c: Cart): Promise<Cart | null> => {
+    if (!c.tabId) return c;
+    try {
+      const saved = await saveTab(c, cartTotals(c, taxes).total, user.id);
+      setCart((now) => (now.tabId === saved.tabId ? { ...now, tabVersion: saved.tabVersion, tableName: saved.tableName } : now));
+      return saved;
+    } catch (err) {
+      if (err instanceof TabConflict && err.code === "changed" && err.tab) {
+        const server = cartOf(err.tab);
+        const known = new Set(server.lines.map((l) => l.id));
+        const merged: Cart = {
+          ...server,
+          lines: [...server.lines, ...c.lines.filter((l) => !known.has(l.id))],
+          kitchenVoids: [...(server.kitchenVoids ?? []), ...(c.kitchenVoids ?? [])],
+        };
+        try {
+          const saved = await saveTab(merged, cartTotals(merged, taxes).total, user.id);
+          setCart(saved);
+          setNotice(t("Another till changed this table. Both sets of items are kept; check the bill."));
+          return saved;
+        } catch (again) {
+          setNotice((again as Error).message);
+          return null;
+        }
+      }
+      if (err instanceof TabConflict && err.code === "closed") {
+        setCart(emptyCart());
+        setSelected(null);
+        setNotice(err.message);
+        return null;
+      }
+      setNotice(err instanceof OfflineError ? t("Tables need the connection. The bill stays on this till until it is back.") : (err as Error).message);
+      return null;
+    }
+  };
+
+  const openTable = async (table: DiningTable, tab: RemoteTab | null, guests?: number) => {
+    if (cart.lines.length && !cart.tabId) return setNotice(t("Finish or park the current sale first."));
+    if (cart.tabId && !(await persistTab(cart))) return;
+    setShowFloor(false);
+    setSelected(null);
+    if (tab) setCart(cartOf(tab));
+    else {
+      const fresh: Cart = { ...emptyCart(), tabId: crypto.randomUUID(), tableId: table.id, tableName: table.name, guests, tabVersion: 0 };
+      setCart(fresh);
+      // Claims the table at once, so another till can't open a second bill on it.
+      if (!(await persistTab(fresh))) setCart(emptyCart());
+    }
+    tabs.reload();
+  };
+
+  const moveTable = async (table: DiningTable) => {
+    setMoving(false);
+    setShowFloor(false);
+    const next = { ...cart, tableId: table.id, tableName: table.name };
+    if (await persistTab(next)) {
+      setCart((c) => ({ ...c, tableId: table.id, tableName: table.name }));
+      setNotice(t("Moved to table {name}.", { name: table.name }));
+    }
+    tabs.reload();
+  };
+
+  /** Puts the table's bill back for later, and shows the floor. */
+  const saveTable = async () => {
+    if (!(await persistTab(cart))) return;
+    setCart(emptyCart());
+    setSelected(null);
+    tabs.reload();
+    setShowFloor(true);
+  };
+
+  const sendToKitchen = async () => {
+    const lines = kitchenLines(cart);
+    if (!lines.length) return setNotice(t("Nothing new for the kitchen."));
+    const ticket = {
+      id: crypto.randomUUID(),
+      tabId: cart.tabId ?? null,
+      label: tabLabel(cart),
+      guests: cart.guests ?? null,
+      lines,
+      userId: user.id,
+      createdAt: new Date().toISOString(),
+    };
+    await queueKitchenTicket(ticket);
+    if (hub?.printer) {
+      printOnHub(kitchenDoc(ticket, { by: user.name, timezone: setup.store.timezone })).catch(() =>
+        setNotice(t("The kitchen ticket did not print. Kitchen screens still get it.")),
+      );
+    }
+    const sent = markSent(cart);
+    setCart(sent);
+    setNotice(t("Sent to the kitchen."));
+    await persistTab(sent);
+  };
+
+  /** Takes off (part of) a line the kitchen already has: a manager agrees, the kitchen is told. */
+  const voidSentLine = (line: NonNullable<typeof selectedLine>, qtyLeft: number, then: (c: Cart) => Cart) => {
+    const gone = (line.sentQty ?? 0) - Math.max(0, qtyLeft);
+    const summary = `Take off ${qtyText(gone, line.uom)} × ${line.name} already sent to the kitchen${cart.tableName ? ` (table ${cart.tableName})` : ""}`;
+    withManager(t("Take off an item the kitchen has"), { kind: "void", summary, amount: Math.round(line.unitPrice * gone) }, (approvedBy, approvalId) => {
+      setCart((c) => then(voidSent(c, line, qtyLeft)));
+      void logTillEvent({ kind: "void", sessionId: session.id, userId: user.id, approvedBy, approvalId, summary, amount: Math.round(line.unitPrice * gone), details: { variantId: line.variantId, tabId: cart.tabId } });
+    });
+  };
 
   // Keep the line being edited (usually the one just scanned) in view.
   useEffect(() => {
@@ -262,6 +393,10 @@ export function SellScreen({ setup, user, session }: Props) {
       setCart((c) => updateLine(c, selectedLine.id, patch));
       setEntry("");
     };
+    if (patch.qty !== undefined && selectedLine.sentQty && patch.qty < selectedLine.sentQty) {
+      setEntry("");
+      return voidSentLine(selectedLine, patch.qty, (c) => updateLine(c, selectedLine.id, patch));
+    }
     if (needsManager(patch, selectedLine)) {
       // The pad starts empty again whatever the manager or owner decides.
       setEntry("");
@@ -288,8 +423,17 @@ export function SellScreen({ setup, user, session }: Props) {
     setPaying(false);
     setReceipt(order);
     setReceiptPhone(cart.customer?.phone ?? null);
-    setCart(emptyCart());
     setSelected(null);
+    if (split) {
+      // One guest has paid their part; the rest of the bill stays on the table.
+      setCart(split.rest);
+      setSplit(null);
+      void persistTab(split.rest);
+      return;
+    }
+    // The sale closes the tab on the server when it syncs; closing it now frees the table at once.
+    if (cart.tabId) void closeTab(cart.tabId, user.id, { orderId: order.id }).then(tabs.reload, () => {});
+    setCart(emptyCart());
   };
 
   const clearNotice = useCallback(() => setNotice(null), []);
@@ -318,6 +462,20 @@ export function SellScreen({ setup, user, session }: Props) {
   };
 
   const clear = () => {
+    if (cart.tabId) {
+      const tabId = cart.tabId;
+      const done = () => {
+        setCart(emptyCart());
+        setSelected(null);
+        tabs.reload();
+      };
+      if (!cart.lines.length) return void closeTab(tabId, user.id).then(done, (e: Error) => setNotice(e.message));
+      const summary = `Void the bill of ${tabLabel(cart)}, AED ${money(totals.total)}`;
+      return withManager(t("Void this table's bill"), { kind: "void", summary, amount: totals.total }, (approvedBy, approvalId) => {
+        void closeTab(tabId, approvedBy, { reason: "Voided at the till" }).then(done, (e: Error) => setNotice(e.message));
+        void logTillEvent({ kind: "void", sessionId: session.id, userId: user.id, approvedBy, approvalId, summary, amount: totals.total, details: { tabId } });
+      });
+    }
     if (cart.lines.length && !isRefund) {
       const count = cart.lines.reduce((n, l) => n + (l.uom === "kg" ? 1 : Math.abs(l.qty)), 0);
       const summary = `Void a sale of ${count} item${count === 1 ? "" : "s"}, AED ${money(totals.total)}`;
@@ -363,6 +521,12 @@ export function SellScreen({ setup, user, session }: Props) {
             autoComplete="off"
           />
           </div>
+          {restaurant && (
+            <button type="button" className="btn outline" onClick={() => setShowFloor(true)}>
+              <Icon name="table" />
+              {t("Tables")} {tabs.tabs && <span className={tabs.tabs.length ? "count" : "count quiet"}>{tabs.tabs.length}</span>}
+            </button>
+          )}
           {parkedCount > 0 && (
             <button type="button" className="btn outline" onClick={() => setShowParked(true)}>
               <Icon name="pause" />
@@ -435,8 +599,34 @@ export function SellScreen({ setup, user, session }: Props) {
 
       <section className="cart" aria-label={t("Current sale")}>
         <div className={isRefund ? "cart-head refund" : "cart-head"}>
-          <h2>{isRefund ? t("Refund") : cart.webOrderNumber ? t("Online order {n}", { n: cart.webOrderNumber }) : t("Current sale")}</h2>
-          <span className="badge">{itemCount(cart.lines.length)}</span>
+          <h2>
+            {isRefund
+              ? t("Refund")
+              : cart.webOrderNumber
+                ? t("Online order {n}", { n: cart.webOrderNumber })
+                : cart.tabId
+                  ? tabLabel(cart)
+                  : split
+                    ? t("Part of {table}", { table: tabLabel(split.rest) })
+                    : t("Current sale")}
+          </h2>
+          {cart.tabId ? (
+            <>
+              {cart.guests ? <span className="badge">{t("{n} guests", { n: cart.guests })}</span> : null}
+              <span className="head-btns">
+                <button type="button" className="head-btn" onClick={() => { setMoving(true); setShowFloor(true); }}>
+                  <Icon name="table" size={16} />
+                  {t("Move")}
+                </button>
+                <button type="button" className="head-btn" disabled={!cart.lines.length} onClick={() => setSplitting(true)}>
+                  <Icon name="split" size={16} />
+                  {t("Split")}
+                </button>
+              </span>
+            </>
+          ) : (
+            <span className="badge">{itemCount(cart.lines.length)}</span>
+          )}
         </div>
         {!isRefund && (
           <div className="cart-tags">
@@ -487,7 +677,14 @@ export function SellScreen({ setup, user, session }: Props) {
                       </small>
                     ) : null;
                   })()}
+                  {l.modifiers?.length ? <small className="mods">{l.modifiers.map((m) => m.name).join(" · ")}</small> : null}
                   {l.note && <small className="muted note">“{l.note}”</small>}
+                  {cart.tabId && l.sentQty ? (
+                    <small className="sent">
+                      <Icon name="chef" size={14} />
+                      {l.sentQty >= l.qty ? t("Sent") : t("{n} new", { n: qtyText(l.qty - l.sentQty, l.uom) })}
+                    </small>
+                  ) : null}
                 </span>
                 <span className="amt">{money(totals.lines[idx]?.gross ?? 0)}</span>
               </button>
@@ -574,14 +771,17 @@ export function SellScreen({ setup, user, session }: Props) {
               aria-label={t("Delete selected line")}
               onClick={() => {
                 if (!selectedLine) return;
-                setCart(removeLine(cart, selectedLine.id));
+                if (selectedLine.sentQty) {
+                  const id = selectedLine.id;
+                  voidSentLine(selectedLine, 0, (c) => removeLine(c, id));
+                } else setCart(removeLine(cart, selectedLine.id));
                 setSelected(null);
               }}
             >
               <Icon name="trash" size={18} />
             </button>
           </div>
-          <div className="actions">
+          <div className={cart.tabId ? "actions tab" : "actions"}>
             <button type="button" className="btn ghost" onClick={clear} disabled={!cart.lines.length}>
               {t("Clear")}
             </button>
@@ -591,10 +791,23 @@ export function SellScreen({ setup, user, session }: Props) {
                   <Icon name="note" size={18} />
                   {t("Note")}
                 </button>
-                <button type="button" className="btn ghost" onClick={() => void park()} disabled={!cart.lines.length}>
-                  <Icon name="pause" size={18} />
-                  {t("Park")}
-                </button>
+                {cart.tabId ? (
+                  <>
+                    <button type="button" className="btn ghost" onClick={() => void saveTable()}>
+                      <Icon name="save" size={18} />
+                      {t("Save")}
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => void sendToKitchen()} disabled={!kitchenLines(cart).length}>
+                      <Icon name="chef" size={18} />
+                      {t("Send")}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="btn ghost" onClick={() => void park()} disabled={!cart.lines.length || !!split}>
+                    <Icon name="pause" size={18} />
+                    {t("Park")}
+                  </button>
+                )}
               </>
             )}
             <button type="button" className="btn primary pay" disabled={!cart.lines.length} onClick={startPaying}>
@@ -624,7 +837,14 @@ export function SellScreen({ setup, user, session }: Props) {
           total={totals.total}
           cashierId={user.id}
           onDone={finish}
-          onCancel={() => setPaying(false)}
+          onCancel={() => {
+            setPaying(false);
+            if (split) {
+              // The guest didn't pay their part after all: the whole bill is back.
+              setCart(split.before);
+              setSplit(null);
+            }
+          }}
         />
       )}
       {receipt && (
@@ -661,6 +881,48 @@ export function SellScreen({ setup, user, session }: Props) {
           onApprove={(managerId, approvalId) => {
             approval.apply(managerId, approvalId);
             setApproval(null);
+          }}
+        />
+      )}
+      {choosing && (
+        <ModifierDialog
+          name={choosing.item.name}
+          basePrice={choosing.item.price}
+          groups={choosing.groups}
+          onClose={() => setChoosing(null)}
+          onAdd={(mods) => {
+            const item = choosing.item;
+            setChoosing(null);
+            add(item, 1, mods);
+          }}
+        />
+      )}
+      {showFloor && (
+        <FloorDialog
+          tables={diningTables}
+          tabs={tabs.tabs}
+          error={tabs.error}
+          currentTabId={cart.tabId ?? null}
+          moving={moving}
+          onOpen={(table, tab, guests) => void openTable(table, tab, guests)}
+          onMove={(table) => void moveTable(table)}
+          onClose={() => {
+            setShowFloor(false);
+            setMoving(false);
+          }}
+        />
+      )}
+      {splitting && (
+        <SplitDialog
+          cart={cart}
+          onClose={() => setSplitting(false)}
+          onPay={(take) => {
+            const { now, rest } = splitCart(cart, take);
+            setSplitting(false);
+            setSplit({ before: cart, rest });
+            setCart(now);
+            setSelected(null);
+            setPaying(true);
           }}
         />
       )}

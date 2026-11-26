@@ -259,6 +259,28 @@ changes every minute and keeps playing what it has when the internet drops.
 
 Migration `124_signage.sql`.
 
+### Restaurant mode
+
+For cafés and restaurants: back office → **Restaurant**.
+
+- **Tables** (each store): add one, or a run like T1 to T20, in areas such as Inside or Terrace. Once a store has
+  tables, its tills show a **Tables** button with the floor: free tables, and busy ones with their total, guests,
+  how long they have been open and who last changed them.
+- **Bills on tables** are kept on the server, so every till and waiter in the store sees the same bill. Each save
+  carries the version it was loaded at; when two tills change a bill at once, the till keeps both sets of items
+  and says so. A table holds one open bill. **Move** takes the bill to a free table (in the audit log).
+- **Send** puts what is new on a kitchen ticket: new items, more of an item, and items taken off (as a cancel).
+  The ticket prints on the hub's printer if it has one and is saved for kitchen screens. Taking off an item the
+  kitchen already has, or voiding a whole bill, needs a manager.
+- **Split** lets one guest pay for some items (or part of a line) now; the rest stays on the table.
+  Paying the whole bill closes it.
+- **Choices** (head office): groups like Size (pick 1), Extras (pick any) or Cooking, with Arabic names and extra
+  prices, given to products. The till asks for them when the item is added and prints them on the receipt.
+- **Open bills**: what is open in the store now and not paid yet.
+
+Tables need the connection to the cloud or the hub. Offline, the till still sells without a table. Service charge
+and tips are not in this version. Migration `125_restaurant.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

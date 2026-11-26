@@ -24,6 +24,11 @@ export const OrderLineSchema = z.object({
   promotionId: z.string().uuid().nullable().default(null),
   taxId: z.string().uuid().nullable(),
   note: z.string().max(500).optional(),
+  /** Choices made for the item (size, extras, "no onion"); their prices are in unitPrice. */
+  modifiers: z
+    .array(z.object({ name: z.string().min(1).max(100), price: z.number().int() }))
+    .max(30)
+    .optional(),
 });
 
 export const PaymentSchema = z.object({
@@ -51,6 +56,8 @@ export const OrderSyncSchema = z.object({
   refundOfOrderId: z.string().uuid().nullable().default(null),
   /** The online order this sale hands over to the customer (click-and-collect). */
   webOrderId: z.string().uuid().nullish(),
+  /** The restaurant tab (table bill) this sale pays off. */
+  tabId: z.string().uuid().nullish(),
   orderDiscountBp: z.number().int().min(0).max(10_000).default(0),
   createdAt: z.string().datetime(),
   lines: z.array(OrderLineSchema).min(1).max(500),
