@@ -57,6 +57,8 @@ const HQ_WRITE = [
   // Marketing reaches customers of every store.
   /^\/segments(\/|$)/,
   /^\/campaigns(\/|$)/,
+  // Signage playlists and pictures are the business's; each store looks after its screens.
+  /^\/signage\/(playlists|media)(\/|$)/,
   // The shop's settings and which products it sells; orders are handled by each store.
   /^\/online-store(\/|$)/,
 ];

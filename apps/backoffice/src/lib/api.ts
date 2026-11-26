@@ -134,3 +134,11 @@ export async function download(path: string, filename: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+/** A picture from the API, fetched with the session token, as a URL an <img> can show. */
+export async function blobUrl(path: string): Promise<string> {
+  const token = getToken();
+  const res = await fetch(`${BASE}/admin${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, "error", "The picture did not load");
+  return URL.createObjectURL(await res.blob());
+}
