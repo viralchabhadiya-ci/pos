@@ -184,7 +184,9 @@ describe("segments and campaigns", () => {
   });
 
   it("counts sales by customers in the week after their message", async () => {
-    await ctx.db.query("UPDATE campaign_messages SET sent_at = now() WHERE campaign_id = $1", [campaignId]);
+    // Earlier bills move back an hour, so only the one bought after the message counts.
+    await ctx.db.query("UPDATE orders SET created_at = created_at - interval '1 hour'");
+    await ctx.db.query("UPDATE campaign_messages SET sent_at = now() - interval '1 minute' WHERE campaign_id = $1", [campaignId]);
     const order = await buy(big, 2);
     const detail = (await api("GET", `/campaigns/${campaignId}`)).json();
     expect(detail.results).toEqual({ buyers: 1, orders: 1, sales: order.clientTotals.total });
