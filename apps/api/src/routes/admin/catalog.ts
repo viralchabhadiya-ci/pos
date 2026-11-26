@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { AdminContext } from "../../app.js";
 import { withTx, type Tx } from "../../db.js";
 import { HttpError, notFound } from "../../errors.js";
+import { loadProduct } from "../../public/serialize.js";
+import { emitEvent } from "../../webhooks/events.js";
 import { adminAudit, forbidden, isUniqueViolation } from "./common.js";
 
 const CategorySchema = z.object({
@@ -118,6 +120,7 @@ export async function saveProduct(tx: Tx, ctx: AdminContext, id: string | null, 
         body.reorderLevel ?? null, body.active, body.plu ?? null],
     );
     await adminAudit(tx, ctx, "product.create", "product", newId, { name: body.name, price: body.price, source });
+    await emitEvent(tx, ctx.tenantId, "product.created", async () => loadProduct(tx, ctx.tenantId, newId));
     return newId;
   }
   const before = await tx.query(`${PRODUCT_SELECT} WHERE p.id = $1 AND p.tenant_id = $2 FOR UPDATE OF p`, [id, ctx.tenantId]);
@@ -142,6 +145,7 @@ export async function saveProduct(tx: Tx, ctx: AdminContext, id: string | null, 
     ...(old.active !== body.active ? { active: body.active } : {}),
     ...(source !== "form" ? { source } : {}),
   });
+  await emitEvent(tx, ctx.tenantId, "product.updated", async () => loadProduct(tx, ctx.tenantId, id));
   return id;
 }
 

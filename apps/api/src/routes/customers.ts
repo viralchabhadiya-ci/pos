@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { withTx } from "../db.js";
 import { HttpError } from "../errors.js";
+import { loadCustomer } from "../public/serialize.js";
+import { emitEvent } from "../webhooks/events.js";
 
 const CustomerSchema = z.object({
   id: z.string().uuid(),
@@ -44,11 +47,14 @@ export async function customerRoutes(app: FastifyInstance) {
   app.post("/customers", async (req) => {
     const device = await app.authenticate(req);
     const c = CustomerSchema.parse(req.body);
-    await app.db.query(
-      `INSERT INTO customers (id, tenant_id, name, phone, email, trn) VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (id) DO NOTHING`,
-      [c.id, device.tenantId, c.name, c.phone ?? null, c.email ?? null, c.trn ?? null],
-    );
+    await withTx(app.db, async (tx) => {
+      const inserted = await tx.query(
+        `INSERT INTO customers (id, tenant_id, name, phone, email, trn) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [c.id, device.tenantId, c.name, c.phone ?? null, c.email ?? null, c.trn ?? null],
+      );
+      if (inserted.rowCount) await emitEvent(tx, device.tenantId, "customer.created", async () => loadCustomer(tx, device.tenantId, c.id));
+    });
     return { id: c.id };
   });
 }
