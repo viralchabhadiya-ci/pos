@@ -33,3 +33,4 @@ jobs:
       - run: pnpm --filter @pos/till build
       - run: pnpm --filter @pos/backoffice build
       - run: pnpm --filter @pos/owner build
+      - run: pnpm --filter @pos/staff build

@@ -250,8 +250,35 @@ function LabelPrinting() {
     return () => clearTimeout(t);
   }, [q, categoryId]);
 
-  const add = (products: Product[]) =>
-    setPicked((cur) => [...cur, ...products.filter((p) => !cur.some((c) => c.product.id === p.id)).map((product) => ({ product, copies: 1 }))]);
+  const add = (products: Product[], copies: Record<string, number> = {}) =>
+    setPicked((cur) => [
+      ...cur,
+      ...products.filter((p) => !cur.some((c) => c.product.id === p.id)).map((product) => ({ product, copies: copies[product.id] ?? 1 })),
+    ]);
+  const requests = useLoad(
+    () => api<{ requests: { id: string; productId: string; copies: number; requestedBy: string | null; storeName: string }[]; products: Product[] }>("/label-requests"),
+    [],
+  );
+  const [loadedRequests, setLoadedRequests] = useState<string[]>([]);
+  const toast = useToast();
+  const loadRequests = () => {
+    const r = requests.data;
+    if (!r) return;
+    const copies: Record<string, number> = {};
+    for (const q of r.requests) copies[q.productId] = Math.min(500, (copies[q.productId] ?? 0) + q.copies);
+    add(r.products, copies);
+    setLoadedRequests(r.requests.map((q) => q.id));
+  };
+  const markPrinted = async () => {
+    try {
+      await api("/label-requests/printed", { body: { ids: loadedRequests } });
+      toast(`${loadedRequests.length} ${loadedRequests.length === 1 ? "request" : "requests"} from staff phones marked as printed`);
+      setLoadedRequests([]);
+      requests.reload();
+    } catch (err) {
+      toast(errorText(err), "error");
+    }
+  };
   const labels = useMemo(() => picked.flatMap((p) => Array.from({ length: p.copies }, () => p.product)), [picked]);
   const tpl = TEMPLATES[template];
 
@@ -261,6 +288,27 @@ function LabelPrinting() {
         Print labels
       </h2>
       <div className="noprint">
+        {requests.data && requests.data.requests.length > 0 && (
+          <div className="callout">
+            <p>
+              <strong>
+                {requests.data.requests.length} {requests.data.requests.length === 1 ? "label request" : "label requests"} from staff phones
+              </strong>{" "}
+              <span className="muted">
+                ({[...new Set(requests.data.requests.map((q) => q.requestedBy ?? "staff"))].join(", ")})
+              </span>
+            </p>
+            {loadedRequests.length ? (
+              <button type="button" className="btn sm" onClick={markPrinted}>
+                <Icon name="check" /> Mark as printed
+              </button>
+            ) : (
+              <button type="button" className="btn sm" onClick={loadRequests}>
+                <Icon name="plus" /> Add them below
+              </button>
+            )}
+          </div>
+        )}
         <div className="form-grid">
           <Field label="Find products">
             {(p) => <input {...p} type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, barcode or SKU" />}

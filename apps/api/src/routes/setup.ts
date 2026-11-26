@@ -1,7 +1,7 @@
 import type { Db } from "../db.js";
 
 /** Everything a till needs to know about where it is, returned on pairing and on refresh. */
-export async function loadDeviceSetup(db: Db, registerId: string, role: "till" | "display" = "till") {
+export async function loadDeviceSetup(db: Db, registerId: string, role: "till" | "display" | "staff" = "till") {
   const { rows } = await db.query(
     `SELECT r.id AS register_id, r.code AS register_code, r.name AS register_name,
             s.id AS store_id, s.code AS store_code, s.name AS store_name, s.name_ar AS store_name_ar,

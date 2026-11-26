@@ -39,7 +39,7 @@ interface CountRow {
   storeId: string;
 }
 
-const lock = (tx: Tx, ctx: AdminContext, id: string) =>
+const lock = (tx: Tx, ctx: Pick<AdminContext, "tenantId">, id: string) =>
   mustFind<CountRow>(
     tx,
     `SELECT id, number, status, store_id AS "storeId" FROM stock_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
@@ -50,6 +50,30 @@ const lock = (tx: Tx, ctx: AdminContext, id: string) =>
 /** What the ledger held at a moment, so sales made after a shelf was counted are left out. */
 const AT_COUNT = `(SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m
                     WHERE m.store_id = c.store_id AND m.variant_id = l.variant_id AND m.at <= COALESCE(l.counted_at, now()))`;
+
+export const CountLinesSchema = LinesSchema;
+
+/**
+ * Saves counted quantities. Each line is stamped with the time it was counted. A product not on
+ * the sheet (e.g. found on the shelf but switched off) is added. Used by the back office and by
+ * the staff app.
+ */
+export async function saveCountLines(tx: Tx, ctx: Pick<AdminContext, "tenantId">, countId: string, lines: z.infer<typeof LinesSchema>["lines"]) {
+  const c = await lock(tx, ctx, countId);
+  if (c.status !== "open") throw wrongState(`${c.number} is ${c.status}`);
+  const variants = await checkVariants(tx, ctx.tenantId, lines.map((l) => l.variantId));
+  for (const l of lines) {
+    if (l.counted !== null) checkWhole(variants.get(l.variantId)!, l.counted);
+    await tx.query(
+      `INSERT INTO stock_count_lines (count_id, variant_id, expected, counted, counted_at)
+       VALUES ($1, $2, COALESCE((SELECT SUM(qty) FROM stock_moves WHERE store_id = $5 AND variant_id = $2), 0), $3, $4)
+       ON CONFLICT (count_id, variant_id) DO UPDATE SET counted = EXCLUDED.counted, counted_at = EXCLUDED.counted_at
+         WHERE stock_count_lines.counted IS DISTINCT FROM EXCLUDED.counted`,
+      [c.id, l.variantId, l.counted, l.counted === null ? null : new Date().toISOString(), c.storeId],
+    );
+  }
+  return { id: c.id, saved: lines.length, storeId: c.storeId };
+}
 
 export async function countRoutes(app: FastifyInstance) {
   app.get("/stock-counts", async (req) => {
@@ -137,22 +161,7 @@ export async function countRoutes(app: FastifyInstance) {
   app.put<{ Params: { id: string } }>("/stock-counts/:id/lines", async (req) => {
     const ctx = await app.authAdmin(req);
     const b = LinesSchema.parse(req.body);
-    return withTx(app.db, async (tx) => {
-      const c = await lock(tx, ctx, req.params.id);
-      if (c.status !== "open") throw wrongState(`${c.number} is ${c.status}`);
-      const variants = await checkVariants(tx, ctx.tenantId, b.lines.map((l) => l.variantId));
-      for (const l of b.lines) {
-        if (l.counted !== null) checkWhole(variants.get(l.variantId)!, l.counted);
-        await tx.query(
-          `INSERT INTO stock_count_lines (count_id, variant_id, expected, counted, counted_at)
-           VALUES ($1, $2, COALESCE((SELECT SUM(qty) FROM stock_moves WHERE store_id = $5 AND variant_id = $2), 0), $3, $4)
-           ON CONFLICT (count_id, variant_id) DO UPDATE SET counted = EXCLUDED.counted, counted_at = EXCLUDED.counted_at
-             WHERE stock_count_lines.counted IS DISTINCT FROM EXCLUDED.counted`,
-          [c.id, l.variantId, l.counted, l.counted === null ? null : new Date().toISOString(), c.storeId],
-        );
-      }
-      return { id: c.id, saved: b.lines.length };
-    });
+    return withTx(app.db, (tx) => saveCountLines(tx, ctx, req.params.id, b.lines));
   });
 
   /** Writes the differences to the stock ledger and closes the count. */

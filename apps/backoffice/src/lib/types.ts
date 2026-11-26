@@ -48,7 +48,7 @@ export interface Staff {
   lastLoginAt: string | null;
   canSignIn: boolean;
 }
-export interface Device { id: string; name: string; role: "till" | "display"; pairedAt: string; lastSeenAt: string | null; online: boolean }
+export interface Device { id: string; name: string; role: "till" | "display" | "staff"; pairedAt: string; lastSeenAt: string | null; online: boolean }
 export interface Register {
   id: string;
   code: string;

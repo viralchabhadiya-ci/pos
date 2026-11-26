@@ -59,7 +59,7 @@ const ListSchema = z.object({
   status: z.enum(["active", "inactive", "low", "all"]).default("all"),
 });
 
-const PRODUCT_SELECT = `
+export const PRODUCT_SELECT = `
   SELECT p.id, v.id AS "variantId", p.name, p.name_ar AS "nameAr", p.category_id AS "categoryId", c.name AS "categoryName",
          p.uom, p.tax_id AS "taxId", v.price, v.cost, v.barcode, v.extra_barcodes AS "extraBarcodes", v.sku, v.plu,
          v.reorder_level AS "reorderLevel", p.active, p.updated_at AS "updatedAt", oh.qty AS "onHand"
