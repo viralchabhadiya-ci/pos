@@ -17,7 +17,10 @@ export async function loadDeviceSetup(db: Db, registerId: string, role: "till" |
     [registerId],
   );
   const open = await db.query(
-    "SELECT id, seq, opened_by, opened_at, opening_cash FROM sessions WHERE register_id = $1 AND state = 'open'",
+    // lastOrderSeq: a replacement device carries on numbering the shift's sales after the last one.
+    `SELECT s.id, s.seq, s.opened_by, s.opened_at, s.opening_cash,
+            (SELECT COALESCE(MAX(substring(o.number from '(\\d+)$')::int), 0) FROM orders o WHERE o.session_id = s.id) AS last_order_seq
+       FROM sessions s WHERE s.register_id = $1 AND s.state = 'open'`,
     [registerId],
   );
   return {
@@ -46,6 +49,7 @@ export async function loadDeviceSetup(db: Db, registerId: string, role: "till" |
           openedBy: open.rows[0].opened_by,
           openedAt: open.rows[0].opened_at,
           openingCash: open.rows[0].opening_cash,
+          lastOrderSeq: open.rows[0].last_order_seq as number,
         }
       : null,
   };

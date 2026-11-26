@@ -22,6 +22,7 @@ export function FloorDialog({
   tabs,
   error,
   currentTabId,
+  guestOrders,
   moving,
   onOpen,
   onMove,
@@ -31,6 +32,8 @@ export function FloorDialog({
   tabs: RemoteTab[] | null;
   error: string | null;
   currentTabId: string | null;
+  /** Tables whose guests sent an order from the QR code that nobody has added yet. */
+  guestOrders?: Set<string>;
   moving: boolean;
   onOpen: (table: DiningTable, tab: RemoteTab | null, guests?: number) => void;
   onMove: (table: DiningTable) => void;
@@ -84,6 +87,12 @@ export function FloorDialog({
                 onClick={() => (moving ? onMove(table) : tab ? onOpen(table, tab) : setAsking(table))}
               >
                 <span className="table-name">{table.name}</span>
+                {guestOrders?.has(table.id) && (
+                  <span className="table-guest-order">
+                    <Icon name="ticket" size={14} />
+                    {t("Guest order")}
+                  </span>
+                )}
                 {tab ? (
                   <>
                     {tab.readyTickets ? (

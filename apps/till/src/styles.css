@@ -623,3 +623,6 @@ small.block { display: block; }
 .kds-recall li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
 .kds-actions .btn { white-space: nowrap; }
 .kds-actions .btn.ghost { flex: 0 1 auto; padding-inline: var(--space-3); }
+.table-guest-order { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: var(--warn); color: var(--surface); font-size: 13px; font-weight: 700; }
+.web-order-lines { list-style: none; margin: var(--space-1) 0 0; padding: 0; font-size: var(--text-sm); }
+.web-order.table, .web-order.kiosk { border-inline-start: 4px solid var(--warn); }

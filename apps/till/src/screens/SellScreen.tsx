@@ -40,9 +40,9 @@ import { CustomerDialog } from "./CustomerDialog.js";
 import { PaymentDialog } from "./PaymentDialog.js";
 import { ReceiptView } from "./ReceiptView.js";
 import { RefundDialog } from "./RefundDialog.js";
-import { useWebOrders, WebOrdersDialog } from "./WebOrdersDialog.js";
+import { addWebLines, useWebOrders, WebOrdersDialog, type WebOrder } from "./WebOrdersDialog.js";
 import { useSyncStatus } from "../lib/useSync.js";
-import { OfflineError } from "../lib/api.js";
+import { OfflineError, request } from "../lib/api.js";
 import { kitchenDoc, printOnHub } from "../lib/print.js";
 import { queueKitchenTicket } from "../lib/till.js";
 import { cartOf, closeTab, kitchenLines, markSent, saveTab, tabLabel, TabConflict, useTabs, voidSent, type RemoteTab } from "../lib/tabs.js";
@@ -310,6 +310,31 @@ export function SellScreen({ setup, user, session }: Props) {
     tabs.reload();
   };
 
+  /** A guest's order from their table's QR code: onto that table's bill, ready to send to the kitchen. */
+  const addWebToTable = async (o: WebOrder) => {
+    const table = diningTables.find((d) => d.id === o.tableId);
+    if (!table) throw new Error(t("That table is not on this till. Sync and try again."));
+    const sameTable = !!cart.tabId && cart.tableId === table.id;
+    if (cart.lines.length && !sameTable && !cart.tabId) throw new Error(t("Finish or park the current sale first."));
+    if (cart.tabId && !sameTable && !(await persistTab(cart))) return;
+    const tab = sameTable ? null : (tabs.tabs ?? []).find((x) => x.tableId === table.id);
+    const base: Cart = sameTable
+      ? cart
+      : tab
+        ? cartOf(tab)
+        : { ...emptyCart(), tabId: crypto.randomUUID(), tableId: table.id, tableName: table.name, tabVersion: 0 };
+    const next = addWebLines(base, o, new Map((items ?? []).map((i) => [i.variantId, i])));
+    const saved = await persistTab(next);
+    if (!saved) return;
+    await request(`/web-orders/${o.id}/to-tab`, { body: { userId: user.id, tabId: saved.tabId } });
+    setCart(saved);
+    setSelected(null);
+    setShowWebOrders(false);
+    setNotice(t("Added to table {name}. Press Send for the kitchen.", { name: table.name }));
+    tabs.reload();
+    webOrders.reload();
+  };
+
   const moveTable = async (table: DiningTable) => {
     setMoving(false);
     setShowFloor(false);
@@ -419,9 +444,11 @@ export function SellScreen({ setup, user, session }: Props) {
   const finish = (order: LocalOrder) => {
     // In a restaurant, a sale paid at the counter (not on a table) goes to the kitchen as it is paid.
     // Items of a split part the kitchen hasn't had yet go to it under the table's name.
-    if (restaurant && !isRefund && !cart.tabId) {
+    if ((restaurant || cart.kioskNumber) && !isRefund && !cart.tabId) {
       const lines = kitchenLines({ ...cart, kitchenVoids: [] });
-      const label = split ? tabLabel(split.rest) : t("Order {n}", { n: order.number.split("-").at(-1) ?? order.number });
+      const label = split
+        ? tabLabel(split.rest)
+        : t("Order {n}", { n: cart.kioskNumber ?? order.number.split("-").at(-1) ?? order.number });
       if (lines.length) void dispatchTicket(lines, label, split?.rest.tabId ?? null, null);
     }
     setPaying(false);
@@ -907,6 +934,7 @@ export function SellScreen({ setup, user, session }: Props) {
           tabs={tabs.tabs}
           error={tabs.error}
           currentTabId={cart.tabId ?? null}
+          guestOrders={new Set((webOrders.orders ?? []).filter((o) => o.channel === "table" && o.tableId).map((o) => o.tableId!))}
           moving={moving}
           onOpen={(table, tab, guests) => void openTable(table, tab, guests)}
           onMove={(table) => void moveTable(table)}
@@ -944,6 +972,7 @@ export function SellScreen({ setup, user, session }: Props) {
             setCart(c);
             setSelected(null);
           }}
+          onToTable={addWebToTable}
         />
       )}
       {refunding && (

@@ -54,6 +54,9 @@ importers:
       '@pos/core':
         specifier: workspace:*
         version: link:../../packages/core
+      qrcode-generator:
+        specifier: 1.4.4
+        version: 1.4.4
       react:
         specifier: ^18.3.1
         version: 18.3.1

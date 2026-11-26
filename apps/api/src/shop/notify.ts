@@ -15,14 +15,15 @@ export function orderLink(slug: string, token: string, base = process.env.SHOP_U
  */
 export async function notifyWebOrder(app: FastifyInstance, id: string, kind: WebOrderNotice) {
   const { rows } = await app.db.query(
-    `SELECT w.number, w.name, w.phone, w.email, w.total, w.token, w.pickup_code AS "pickupCode", w.cancel_reason AS "cancelReason",
+    `SELECT w.number, w.channel, w.name, w.phone, w.email, w.total, w.token, w.pickup_code AS "pickupCode", w.cancel_reason AS "cancelReason",
             o.slug, o.ready_minutes AS "readyMinutes", t.name AS shop, s.name AS store, s.address
        FROM web_orders w JOIN online_stores o ON o.tenant_id = w.tenant_id JOIN tenants t ON t.id = w.tenant_id JOIN stores s ON s.id = w.store_id
       WHERE w.id = $1`,
     [id],
   );
   const w = rows[0];
-  if (!w) return;
+  // Table and kiosk orders are followed on the spot, with no phone to message.
+  if (!w || w.channel !== "online" || (!w.email && !w.phone)) return;
   const first = String(w.name).trim().split(/\s+/)[0];
   const link = orderLink(w.slug, w.token);
   const where = w.address ? `${w.store}, ${w.address}` : w.store;

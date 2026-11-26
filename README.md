@@ -296,6 +296,22 @@ amber at 10 minutes and red at 20, and a beep for each new one.
 The screen needs the connection to the cloud (through the hub when there is one). Stations (grill, bar) are not
 split yet: every kitchen screen shows the store's tickets. Migration `126_kitchen.sql`.
 
+### Ordering from the table (QR) and self-order kiosks
+
+Back office → Restaurant → **QR & kiosks**. Both open the shop app (set `SHOP_URL`) and show the products that
+are on the online menu (Online store → Products), with their choices, in English and Arabic.
+
+- **Table QR codes**: make and print one per table. A guest scans it, picks items and sends the order; the till
+  shows "Guest order" on that table and under Online orders. **Add to the bill** puts it on the table's bill
+  (then **Send** for the kitchen); **Don't take** tells the guest to order with the staff. With ordering
+  switched off the QR code shows the menu only. **New code** stops an old QR code.
+- **Kiosks**: add one and open its link on a tablet. Guests order and get a number; the cashier takes payment
+  from Online orders and the kitchen gets the ticket under that number. A kiosk starts again after 90 seconds
+  without a touch.
+
+Limits: 3 orders waiting per table, 60 an hour per network. Paying on the kiosk itself (card on the stand) is not
+in this version. Migration `127_dine_in.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

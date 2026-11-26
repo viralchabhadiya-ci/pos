@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
 import { OfflineError, request } from "../lib/api.js";
-import { addItem, emptyCart, setCustomer, type Cart, type SellableItem } from "../lib/cart.js";
+import { addItem, emptyCart, setCustomer, updateLine, type Cart, type LineModifier, type SellableItem } from "../lib/cart.js";
 import { money } from "../lib/format.js";
 import { t } from "../lib/i18n.js";
 
@@ -10,14 +10,30 @@ export interface WebOrder {
   id: string;
   number: string;
   status: "new" | "accepted" | "ready";
-  name: string;
-  phone: string;
+  name: string | null;
+  phone: string | null;
   note: string | null;
-  lines: { variantId: string; name: string; qty: number }[];
+  lines: { variantId: string; name: string; qty: number; modifiers?: LineModifier[] }[];
   total: number;
   pickupCode: string;
   customerId: string | null;
   createdAt: string;
+  /** online: click-and-collect; table: from the QR code on a table; kiosk: a self-order kiosk. */
+  channel?: "online" | "table" | "kiosk";
+  tableId?: string | null;
+  tableName?: string | null;
+  kioskName?: string | null;
+}
+
+/** Adds an order's items to a sale, made the way the guest chose. */
+export function addWebLines(cart: Cart, o: WebOrder, byId: Map<string, SellableItem>): Cart {
+  let next = cart;
+  const before = new Set(cart.lines.map((l) => l.id));
+  for (const l of o.lines) next = addItem(next, byId.get(l.variantId)!, l.qty, undefined, (l.modifiers ?? []).map((m) => ({ groupId: m.groupId, optionId: m.optionId, name: m.name, price: m.price })));
+  // The guest's note rides on the order's first item, so the kitchen ticket carries it.
+  const first = next.lines.find((l) => !before.has(l.id));
+  if (o.note && first) next = updateLine(next, first.id, { note: first.note ? `${first.note}; ${o.note}` : o.note });
+  return next;
 }
 
 const STATUS: Record<WebOrder["status"], string> = { new: "New", accepted: "Being packed", ready: "Ready" };
@@ -38,7 +54,8 @@ export function useWebOrders(online: boolean) {
         setError(null);
       })
       .catch((err) => live && setError(err instanceof OfflineError ? t("Online orders need the connection.") : (err as Error).message));
-    const timer = setTimeout(() => setTick((n) => n + 1), 60_000);
+    // Guests ordering at a table or a kiosk are waiting, so this is asked often.
+    const timer = setTimeout(() => setTick((n) => n + 1), 20_000);
     return () => {
       live = false;
       clearTimeout(timer);
@@ -59,6 +76,7 @@ export function WebOrdersDialog({
   userId,
   busy,
   onRingUp,
+  onToTable,
   onClose,
 }: {
   orders: WebOrder[] | null;
@@ -69,6 +87,8 @@ export function WebOrdersDialog({
   /** The current sale has items, so ringing up would replace them. */
   busy: boolean;
   onRingUp: (cart: Cart) => void;
+  /** A guest's order from their table's QR code: goes on that table's bill. */
+  onToTable: (o: WebOrder) => Promise<void>;
   onClose: () => void;
 }) {
   const [working, setWorking] = useState<string | null>(null);
@@ -94,18 +114,37 @@ export function WebOrdersDialog({
     if (missing.length) return setProblem(t("Not on this till: {names}", { names: missing.join(", ") }));
     setWorking(o.id);
     setProblem(null);
-    let cart: Cart = { ...emptyCart(), webOrderId: o.id, webOrderNumber: o.number };
+    let cart: Cart = { ...emptyCart(), webOrderId: o.id, webOrderNumber: o.number, ...(o.channel === "kiosk" ? { kioskNumber: Number(o.pickupCode) } : {}) };
     if (o.customerId) {
       // The customer's own prices and points, when the connection allows.
       const c = await request<{ id: string; name: string; phone: string | null; priceListId: string | null; points: number }>(`/customers/${o.customerId}`).catch(
         () => null,
       );
-      cart = setCustomer(cart, c ? { id: c.id, name: c.name, phone: c.phone, priceListId: c.priceListId, points: c.points } : { id: o.customerId, name: o.name, phone: o.phone, priceListId: null });
+      cart = setCustomer(cart, c ? { id: c.id, name: c.name, phone: c.phone, priceListId: c.priceListId, points: c.points } : { id: o.customerId, name: o.name ?? "", phone: o.phone, priceListId: null });
     }
-    for (const l of o.lines) cart = addItem(cart, byId.get(l.variantId)!, l.qty);
+    cart = addWebLines(cart, o, byId);
     setWorking(null);
     onRingUp(cart);
   };
+
+  const run = async (o: WebOrder, fn: () => Promise<unknown>) => {
+    setWorking(o.id);
+    setProblem(null);
+    try {
+      await fn();
+      reload();
+    } catch (err) {
+      setProblem((err as Error).message);
+    } finally {
+      setWorking(null);
+    }
+  };
+  const toTable = (o: WebOrder) => {
+    const missing = o.lines.filter((l) => !items.some((i) => i.variantId === l.variantId)).map((l) => l.name);
+    if (missing.length) return setProblem(t("Not on this till: {names}", { names: missing.join(", ") }));
+    void run(o, () => onToTable(o));
+  };
+  const reject = (o: WebOrder) => void run(o, () => request(`/web-orders/${o.id}/cancel`, { body: { userId, reason: "Please order with the staff" } }));
 
   return (
     <Modal onClose={onClose} label={t("Online orders")} wide>
@@ -122,28 +161,60 @@ export function WebOrdersDialog({
       ) : (
         <ul className="web-orders">
           {orders.map((o) => (
-            <li key={o.id} className={`web-order ${o.status}`}>
+            <li key={o.id} className={`web-order ${o.status}${o.channel && o.channel !== "online" ? ` ${o.channel}` : ""}`}>
               <div className="web-order-head">
-                <strong>{o.number}</strong>
-                <span className={`badge ${o.status}`}>{t(STATUS[o.status])}</span>
+                <strong>
+                  {o.channel === "table"
+                    ? t("Table {name}", { name: o.tableName ?? "" })
+                    : o.channel === "kiosk"
+                      ? t("Kiosk number {n}", { n: Number(o.pickupCode) })
+                      : o.number}
+                </strong>
+                <span className={`badge ${o.status}`}>
+                  {o.channel === "table" ? t("From the table QR") : o.channel === "kiosk" ? t("To pay") : t(STATUS[o.status])}
+                </span>
                 <span className="muted">{clock(o.createdAt)}</span>
                 <span className="web-order-total">AED {money(o.total)}</span>
               </div>
-              <div className="web-order-who">
-                {o.name} · <bdi>{o.phone}</bdi> · {t("Code")} <strong className="tnum">{o.pickupCode}</strong>
-              </div>
-              <div className="muted small">{o.lines.map((l) => `${l.qty} × ${l.name}`).join(", ")}</div>
+              {(!o.channel || o.channel === "online") && (
+                <div className="web-order-who">
+                  {o.name} · <bdi>{o.phone}</bdi> · {t("Code")} <strong className="tnum">{o.pickupCode}</strong>
+                </div>
+              )}
+              {o.channel !== "online" && o.name && <div className="web-order-who">{o.name}</div>}
+              <ul className="web-order-lines">
+                {o.lines.map((l, i) => (
+                  <li key={i}>
+                    {l.qty} × {l.name}
+                    {l.modifiers?.length ? <span className="muted"> · {l.modifiers.map((m) => m.name).join(", ")}</span> : null}
+                  </li>
+                ))}
+              </ul>
               {o.note && <div className="web-order-note">“{o.note}”</div>}
               <div className="web-order-actions">
-                {o.status !== "ready" && (
-                  <button type="button" className="btn outline" disabled={working === o.id} onClick={() => void markReady(o)}>
-                    <Icon name="check" size={18} />
-                    {t("Packed and ready")}
-                  </button>
+                {o.channel === "table" ? (
+                  <>
+                    <button type="button" className="btn ghost" disabled={working === o.id} onClick={() => reject(o)}>
+                      {t("Don't take")}
+                    </button>
+                    <button type="button" className="btn primary" disabled={working === o.id} onClick={() => toTable(o)}>
+                      <Icon name="table" size={18} />
+                      {t("Add to the bill")}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {o.channel !== "kiosk" && o.status !== "ready" && (
+                      <button type="button" className="btn outline" disabled={working === o.id} onClick={() => void markReady(o)}>
+                        <Icon name="check" size={18} />
+                        {t("Packed and ready")}
+                      </button>
+                    )}
+                    <button type="button" className="btn primary" disabled={working === o.id} onClick={() => void ringUp(o)}>
+                      {o.channel === "kiosk" ? t("Take payment") : t("Ring up")}
+                    </button>
+                  </>
                 )}
-                <button type="button" className="btn primary" disabled={working === o.id} onClick={() => void ringUp(o)}>
-                  {t("Ring up")}
-                </button>
               </div>
             </li>
           ))}
