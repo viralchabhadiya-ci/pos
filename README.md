@@ -195,6 +195,35 @@ till Menu → **Scale** and the weigh screen.
   browser; set the margins to none and the scale to 100%.
 - Migration `090_scales.sql`.
 
+### Multi-store head office
+
+Back office **Stores** (`#/stores`, shown once there are two stores), the **Works at** choice on a person,
+the **By store** box on a product and **Who runs this store** in Settings.
+
+- **Stores side by side:** sales for any dates against the same number of days before (with the change in
+  %), bills, average bill, refunds, stock at cost, transfers on the way or waiting to be sent, and tills
+  online and shifts open. Highest sales first, a total row, and a CSV download. Dashboard and Reports can
+  show one store or all of them.
+- **Store managers:** a manager given some stores (**Works at → Only these stores**) sees only those
+  stores' bills, dashboard, reports, stock, purchase orders, counts, transfers, tills and staff. The
+  catalog, prices, offers, price lists, loyalty, accounting, e-invoicing, the audit log and the daily email
+  stay with head office (owners and managers with every store). A store manager can add cashiers only to
+  their own stores.
+- **Cashiers per store:** someone limited to some stores goes to the other stores' tills as switched off,
+  so their PIN only works where they work. Moving them reaches the tills on the next sync.
+- **Central catalog, store overrides:** each product has a **By store** box: untick **Sold here** to take it
+  off that store's tills (stock and past sales stay), or type the store's own price. A store price goes on
+  that store's price list; a store without one gets a list called "*Store name* prices". A list shared with
+  other stores or customers is changed on the Price lists page instead, so one store's edit never moves
+  another's price.
+- **Transfers between stores:** a store manager can send stock from their store or ask another store for
+  it (a draft that store sends). Only the sending store sends or calls back a sent transfer; only the
+  receiving store receives it.
+- **Franchise royalties:** a store can be a franchise with a franchisee, a royalty % and a marketing fee %.
+  **Stores → Franchise royalties** shows what each franchise owes for any dates: a share of net sales
+  before VAT, after discounts and refunds, without gift cards sold. CSV download.
+- Migration `100_multi_store.sql`.
+
 ### New businesses and plans
 
 - **Sign-up:** *Start a free trial* on the back office sign-in page (`#/signup`). One form creates the

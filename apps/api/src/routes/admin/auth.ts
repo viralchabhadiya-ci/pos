@@ -89,11 +89,14 @@ export async function authRoutes(app: FastifyInstance) {
       [ctx.tenantId, ctx.storeIds],
     );
     const usage = await planUsage(app.db, ctx.tenantId);
+    // Every store of the business, for picking the other end of a stock transfer.
+    const all = await app.db.query("SELECT id, name, code FROM stores WHERE tenant_id = $1 ORDER BY code", [ctx.tenantId]);
     return {
       // storeIds null: head office, sees every store. A list: a store manager.
       user: { id: ctx.userId, name: ctx.name, role: ctx.role, storeIds: ctx.storeIds },
       tenant: { id: ctx.tenantId, name: rows[0].name, currency: rows[0].currency },
       stores: rows[0].stores,
+      transferStores: all.rows,
       account: { status: rows[0].status, trialEndsAt: rows[0].trial_ends_at, ...usage },
       support: ctx.support ?? null,
     };

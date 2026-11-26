@@ -89,7 +89,8 @@ export async function stockRoutes(app: FastifyInstance) {
     const f = z
       .object({ q: z.string().trim().max(100).default(""), storeId: z.string().uuid().optional(), supplierId: z.string().uuid().optional() })
       .parse(req.query);
-    const params: unknown[] = [ctx.tenantId, storeParam(ctx, f.storeId), f.supplierId ?? null];
+    // Stock levels of another store may be looked at, e.g. to ask it for a transfer.
+    const params: unknown[] = [ctx.tenantId, f.storeId ? [f.storeId] : ctx.storeIds, f.supplierId ?? null];
     let filter = "";
     if (f.q) {
       params.push(`%${f.q}%`, f.q);

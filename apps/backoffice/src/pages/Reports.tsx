@@ -4,6 +4,7 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, download, errorText } from "../lib/api.js";
 import { aed, bp, money, qty } from "../lib/format.js";
+import type { Me } from "../lib/types.js";
 import { useLoad } from "../lib/useLoad.js";
 
 type GroupBy = "product" | "category" | "cashier" | "payment" | "day";
@@ -69,11 +70,12 @@ const KIND_LABEL: Record<VatRow["kind"], string> = {
   none: "No VAT set",
 };
 
-export function Reports() {
+export function Reports({ me }: { me: Me }) {
   const [tab, setTab] = useState<Tab>("product");
   const [range, setRange] = useState(() => presets()[2]!);
+  const [storeId, setStoreId] = useState("");
   const toast = useToast();
-  const q = `from=${range.from}&to=${range.to}`;
+  const q = `from=${range.from}&to=${range.to}${storeId ? `&storeId=${storeId}` : ""}`;
 
   const report = useLoad<SalesReport | VatReport>(
     () => (tab === "vat" ? api<VatReport>(`/reports/vat?${q}`) : api<SalesReport>(`/reports/sales?${q}&groupBy=${tab}`)),
@@ -120,6 +122,19 @@ export function Reports() {
           <span>To</span>
           <input type="date" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value, label: "" })} />
         </label>
+        {me.stores.length > 1 && (
+          <label className="inline-label">
+            <span>Store</span>
+            <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+              <option value="">All stores</option>
+              {me.stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div
