@@ -117,8 +117,9 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     const src = order.lines[i]!;
     await tx.query(
       `INSERT INTO order_lines (id, order_id, line_no, variant_id, name, qty, unit_price, discount_bp,
-         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id, gift_card_code)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+         line_discount, order_discount, tax_id, tax_rate_bp, net, tax, gross, note, promo_discount, promotion_id, gift_card_code, unit_cost)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+               (SELECT cost FROM variants WHERE id = $4))`,
       [
         l.id, order.id, i + 1, l.variantId, l.name, l.qty, l.unitPrice, l.discountBp ?? 0, l.lineDiscount,
         l.orderDiscount, l.taxId, l.taxId ? taxes[l.taxId]!.rateBp : null, l.net, l.tax, l.gross, src.note ?? null,

@@ -3,6 +3,7 @@ import type { Db } from "../db.js";
 import { buildDailySummary } from "./daily.js";
 import type { Mailer } from "./mailer.js";
 import { renderDailyEmail } from "./render.js";
+import { runDueSchedules } from "./scheduled.js";
 
 export interface ReportSettings {
   dailyEnabled: boolean;
@@ -168,6 +169,11 @@ export function startReportWorker(
       await runDueReports(db, mailer, opts);
     } catch (err) {
       log.error(err, "daily summary worker failed");
+    }
+    try {
+      await runDueSchedules(db, mailer);
+    } catch (err) {
+      log.error(err, "scheduled report worker failed");
     } finally {
       running = false;
     }

@@ -6,7 +6,7 @@ export interface RenderedEmail {
   text: string;
 }
 
-const esc = (s: unknown) =>
+export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** Fils to "1,234.50"; negatives keep their minus sign. */
@@ -31,7 +31,7 @@ function longDate(date: string): string {
 
 const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00–${String((h + 1) % 24).padStart(2, "0")}:00`;
 
-const C = {
+export const C = {
   fg: "#111a19",
   muted: "#4f5d5b",
   line: "#d3dcda",
@@ -42,7 +42,7 @@ const C = {
   warn: "#8f4b0c",
 };
 
-function table(head: string[], rows: string[][], numeric: boolean[]): string {
+export function table(head: string[], rows: string[][], numeric: boolean[]): string {
   const th = head
     .map(
       (h, i) =>
