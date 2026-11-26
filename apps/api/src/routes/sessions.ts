@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { DeviceContext } from "../app.js";
 import { withTx, type Db, type Tx } from "../db.js";
 import { badRequest, conflict, notFound } from "../errors.js";
+import { emitEvent } from "../webhooks/events.js";
 import { audit } from "./audit.js";
 
 async function getSession(db: Db | Tx, id: string, device: DeviceContext) {
@@ -120,7 +121,15 @@ export async function sessionRoutes(app: FastifyInstance) {
         counted: body.closingCashCounted,
         difference: body.closingCashCounted - summary.expectedCash,
       });
-      return sessionSummary(tx, session.id);
+      const closed = await sessionSummary(tx, session.id);
+      await emitEvent(tx, device.tenantId, "session.closed", {
+        ...closed,
+        registerId: device.registerId,
+        storeId: device.storeId,
+        closedBy: body.closedBy,
+        note: body.note ?? null,
+      });
+      return closed;
     });
   });
 

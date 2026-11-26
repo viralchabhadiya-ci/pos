@@ -1,4 +1,6 @@
 const BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+/** A full address on the API server, e.g. its public API docs. */
+export const apiUrl = (path: string) => `${BASE || window.location.origin}${path}`;
 const TOKEN_KEY = "bo.token";
 
 export class ApiError extends Error {

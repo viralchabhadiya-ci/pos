@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { money, toCsv } from "../../../csv.js";
-import { withTx } from "../../../db.js";
+import type { AdminContext } from "../../../app.js";
+import { withTx, type Tx } from "../../../db.js";
+import { emitLowStock } from "../../../webhooks/events.js";
 import { notFound } from "../../../errors.js";
 import { adminAudit } from "../common.js";
 import {
@@ -39,7 +41,7 @@ const ItemSettingsSchema = z.object({
     .optional(),
 });
 
-const AdjustSchema = z.object({
+export const AdjustSchema = z.object({
   storeId: z.string().uuid(),
   /** adjust: a correction either way (signed). waste: damaged, expired or stolen goods written off (positive). */
   reason: z.enum(["adjust", "waste"]),
@@ -80,6 +82,34 @@ const INCOMING = (store: string) => `(
    WHERE l.variant_id = v.id AND po.status IN ('ordered', 'partial') ${store ? `AND po.store_id = ${store}` : ""})
  + (SELECT COALESCE(SUM(tl.qty), 0) FROM transfer_lines tl JOIN transfers t ON t.id = tl.transfer_id
      WHERE tl.variant_id = v.id AND t.status = 'sent' ${store ? `AND t.to_store_id = ${store}` : ""})`;
+
+/** Corrections and write-offs (damaged, expired, stolen). Used by the back office and the public API. */
+export async function adjustStock(tx: Tx, ctx: AdminContext, b: z.infer<typeof AdjustSchema>) {
+  await checkStore(tx, ctx.tenantId, b.storeId);
+  const variants = await checkVariants(tx, ctx.tenantId, b.lines.map((l) => l.variantId));
+  if (b.reason === "waste" && b.lines.some((l) => l.qty < 0)) throw bad("Enter how many were thrown away as a positive number");
+  if (b.reason === "waste" && !empty(b.note)) throw bad("Say why the stock is written off, e.g. expired or damaged");
+  for (const l of b.lines) {
+    checkWhole(variants.get(l.variantId)!, Math.abs(l.qty));
+    if (l.lotId) {
+      const { rowCount } = await tx.query("SELECT 1 FROM lots WHERE id = $1 AND variant_id = $2", [l.lotId, l.variantId]);
+      if (!rowCount) throw bad("That batch does not belong to the product");
+    }
+  }
+  await lockVariants(tx, [...variants.keys()]);
+  const ref = randomUUID();
+  let value = 0;
+  const moved = new Map<string, number>();
+  for (const l of b.lines) {
+    const qty = b.reason === "waste" ? -l.qty : l.qty;
+    value += Math.round(qty * (variants.get(l.variantId)!.cost ?? 0));
+    moved.set(l.variantId, qty);
+    await writeMove(tx, ctx, { storeId: b.storeId, variantId: l.variantId, qty, reason: b.reason, refId: ref, lotId: l.lotId, note: empty(b.note) });
+  }
+  await adminAudit(tx, ctx, `stock.${b.reason}`, "stock_adjustment", ref, { storeId: b.storeId, lines: b.lines.length, value, note: empty(b.note) });
+  await emitLowStock(tx, ctx.tenantId, b.storeId, moved);
+  return { id: ref, value };
+}
 
 export async function stockRoutes(app: FastifyInstance) {
   /** Product picker for documents: search by name, barcode or SKU, with the store's stock. */
@@ -292,29 +322,7 @@ export async function stockRoutes(app: FastifyInstance) {
   app.post("/inventory/adjustments", async (req) => {
     const ctx = await app.authAdmin(req);
     const b = AdjustSchema.parse(req.body);
-    return withTx(app.db, async (tx) => {
-      await checkStore(tx, ctx.tenantId, b.storeId);
-      const variants = await checkVariants(tx, ctx.tenantId, b.lines.map((l) => l.variantId));
-      if (b.reason === "waste" && b.lines.some((l) => l.qty < 0)) throw bad("Enter how many were thrown away as a positive number");
-      if (b.reason === "waste" && !empty(b.note)) throw bad("Say why the stock is written off, e.g. expired or damaged");
-      for (const l of b.lines) {
-        checkWhole(variants.get(l.variantId)!, Math.abs(l.qty));
-        if (l.lotId) {
-          const { rowCount } = await tx.query("SELECT 1 FROM lots WHERE id = $1 AND variant_id = $2", [l.lotId, l.variantId]);
-          if (!rowCount) throw bad("That batch does not belong to the product");
-        }
-      }
-      await lockVariants(tx, [...variants.keys()]);
-      const ref = randomUUID();
-      let value = 0;
-      for (const l of b.lines) {
-        const qty = b.reason === "waste" ? -l.qty : l.qty;
-        value += Math.round(qty * (variants.get(l.variantId)!.cost ?? 0));
-        await writeMove(tx, ctx, { storeId: b.storeId, variantId: l.variantId, qty, reason: b.reason, refId: ref, lotId: l.lotId, note: empty(b.note) });
-      }
-      await adminAudit(tx, ctx, `stock.${b.reason}`, "stock_adjustment", ref, { storeId: b.storeId, lines: b.lines.length, value, note: empty(b.note) });
-      return { id: ref, value };
-    });
+    return withTx(app.db, (tx) => adjustStock(tx, ctx, b));
   });
 
   /**

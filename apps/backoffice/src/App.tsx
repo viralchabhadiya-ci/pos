@@ -24,6 +24,7 @@ import { Settings } from "./pages/Settings.js";
 import { Staff } from "./pages/Staff.js";
 import { Inventory } from "./pages/inventory/Inventory.js";
 import { Labels } from "./pages/Labels.js";
+import { Developers } from "./pages/Developers.js";
 
 const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
@@ -42,6 +43,7 @@ const NAV: { path: string; label: string; icon: IconName }[] = [
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
   { path: "audit", label: "Audit log", icon: "history" },
+  { path: "developers", label: "Developers", icon: "key" },
   { path: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -128,6 +130,8 @@ export function App() {
         return <Labels me={me} />;
       case "loyalty":
         return <Loyalty me={me} cardId={route[1] === "cards" ? route[2] : undefined} />;
+      case "developers":
+        return <Developers me={me} route={route.slice(1)} />;
       case "audit":
         return <Audit />;
       case "settings":

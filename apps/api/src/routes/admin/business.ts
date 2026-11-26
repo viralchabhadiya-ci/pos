@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { HttpError, notFound } from "../../errors.js";
-import { withTx } from "../../db.js";
+import type { AdminContext } from "../../app.js";
+import { withTx, type Db } from "../../db.js";
+import { loadCustomer } from "../../public/serialize.js";
+import { emitEvent } from "../../webhooks/events.js";
 import { planUsage } from "../../tenants.js";
 import { adminAudit, forbidden, isUniqueViolation } from "./common.js";
 
 const empty = (s: string | null | undefined) => (s ? s : null);
 
-const CustomerSchema = z.object({
+export const CustomerSchema = z.object({
   name: z.string().trim().min(1).max(200),
   phone: z.string().trim().max(30).nullish(),
   email: z.string().trim().email("Enter a valid email").max(200).or(z.literal("")).nullish(),
@@ -58,7 +61,54 @@ const StoreSchema = z.object({
 const STORE_SELECT = `SELECT id, code, name, name_ar AS "nameAr", address, phone, trn, timezone,
   cash_rounding_step AS "cashRoundingStep", receipt_footer AS "receiptFooter", price_list_id AS "priceListId" FROM stores`;
 
+/** Adds a customer, or changes one when `id` is given. Used by the back office and the public API. */
+export async function saveCustomer(db: Db, ctx: AdminContext, id: string | null, body: z.infer<typeof CustomerSchema>) {
+  if (body.phone) {
+    const { rowCount } = await db.query("SELECT 1 FROM customers WHERE tenant_id = $1 AND phone = $2 AND id IS DISTINCT FROM $3", [
+      ctx.tenantId,
+      body.phone,
+      id,
+    ]);
+    if (rowCount) throw new HttpError(409, "phone_taken", "Another customer has this phone number");
+  }
+  if (body.priceListId) {
+    const { rowCount } = await db.query("SELECT 1 FROM price_lists WHERE id = $1 AND tenant_id = $2", [body.priceListId, ctx.tenantId]);
+    if (!rowCount) throw new HttpError(400, "bad_request", "That price list does not exist");
+  }
+  return withTx(db, async (tx) => {
+    const values = [empty(body.phone), empty(body.email), empty(body.trn), body.priceListId ?? null];
+    const created = !id;
+    if (!id) {
+      id = randomUUID();
+      await tx.query("INSERT INTO customers (id, tenant_id, name, phone, email, trn, price_list_id) VALUES ($1, $2, $3, $4, $5, $6, $7)", [
+        id,
+        ctx.tenantId,
+        body.name,
+        ...values,
+      ]);
+      await adminAudit(tx, ctx, "customer.create", "customer", id, { name: body.name });
+    } else {
+      const res = await tx.query(
+        `UPDATE customers SET name = $3, phone = $4, email = $5, trn = $6, price_list_id = $7, updated_at = now()
+          WHERE id = $1 AND tenant_id = $2`,
+        [id, ctx.tenantId, body.name, ...values],
+      );
+      if (!res.rowCount) throw notFound("Customer");
+      await adminAudit(tx, ctx, "customer.update", "customer", id, { name: body.name });
+    }
+    const saved = id;
+    await emitEvent(tx, ctx.tenantId, created ? "customer.created" : "customer.updated", async () => loadCustomer(tx, ctx.tenantId, saved));
+    return saved;
+  });
+}
+
 export async function businessRoutes(app: FastifyInstance) {
+  async function checkPriceList(tenantId: string, id: string | null | undefined) {
+    if (!id) return;
+    const { rowCount } = await app.db.query("SELECT 1 FROM price_lists WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
+    if (!rowCount) throw new HttpError(400, "bad_request", "That price list does not exist");
+  }
+
   // Customers
 
   app.get("/customers", async (req) => {
@@ -101,48 +151,14 @@ export async function businessRoutes(app: FastifyInstance) {
     return { ...rows[0], orders: orders.rows };
   });
 
-  async function phoneTaken(tenantId: string, phone: string | null | undefined, exceptId: string | null) {
-    if (!phone) return;
-    const { rowCount } = await app.db.query(
-      "SELECT 1 FROM customers WHERE tenant_id = $1 AND phone = $2 AND id IS DISTINCT FROM $3",
-      [tenantId, phone, exceptId],
-    );
-    if (rowCount) throw new HttpError(409, "phone_taken", "Another customer has this phone number");
-  }
-
-  async function checkPriceList(tenantId: string, id: string | null | undefined) {
-    if (!id) return;
-    const { rowCount } = await app.db.query("SELECT 1 FROM price_lists WHERE id = $1 AND tenant_id = $2", [id, tenantId]);
-    if (!rowCount) throw new HttpError(400, "bad_request", "That price list does not exist");
-  }
-
   app.post("/customers", async (req) => {
     const ctx = await app.authAdmin(req);
-    const body = CustomerSchema.parse(req.body);
-    await phoneTaken(ctx.tenantId, body.phone, null);
-    await checkPriceList(ctx.tenantId, body.priceListId);
-    const id = randomUUID();
-    await app.db.query(
-      "INSERT INTO customers (id, tenant_id, name, phone, email, trn, price_list_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-      [id, ctx.tenantId, body.name, empty(body.phone), empty(body.email), empty(body.trn), body.priceListId ?? null],
-    );
-    await adminAudit(app.db, ctx, "customer.create", "customer", id, { name: body.name });
-    return { id };
+    return { id: await saveCustomer(app.db, ctx, null, CustomerSchema.parse(req.body)) };
   });
 
   app.put<{ Params: { id: string } }>("/customers/:id", async (req) => {
     const ctx = await app.authAdmin(req);
-    const body = CustomerSchema.parse(req.body);
-    await phoneTaken(ctx.tenantId, body.phone, req.params.id);
-    await checkPriceList(ctx.tenantId, body.priceListId);
-    const res = await app.db.query(
-      `UPDATE customers SET name = $3, phone = $4, email = $5, trn = $6, price_list_id = $7, updated_at = now()
-        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, ctx.tenantId, body.name, empty(body.phone), empty(body.email), empty(body.trn), body.priceListId ?? null],
-    );
-    if (!res.rowCount) throw notFound("Customer");
-    await adminAudit(app.db, ctx, "customer.update", "customer", req.params.id, { name: body.name });
-    return { id: req.params.id };
+    return { id: await saveCustomer(app.db, ctx, req.params.id, CustomerSchema.parse(req.body)) };
   });
 
   // Audit log
