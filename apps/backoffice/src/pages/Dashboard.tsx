@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "../hq.css";
 import { BarChart } from "../components/BarChart.js";
 import { Icon } from "../components/Icon.js";
 import { EmptyState, ErrorState } from "../components/States.js";
@@ -13,9 +14,14 @@ const shift = (ymd: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-export function Dashboard({ me }: { me: Me }) {
+export function Dashboard({ me, storeId: initialStore }: { me: Me; storeId?: string }) {
   const [date, setDate] = useState<string | null>(null);
-  const { data, error, loading, reload } = useLoad(() => api<Data>(`/dashboard${date ? `?date=${date}` : ""}`), [date]);
+  const [storeId, setStoreId] = useState(initialStore && me.stores.some((s) => s.id === initialStore) ? initialStore : "");
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (storeId) params.set("storeId", storeId);
+  const qs = params.toString();
+  const { data, error, loading, reload } = useLoad(() => api<Data>(`/dashboard${qs ? `?${qs}` : ""}`), [qs]);
   const today = data && !date ? data.date : null;
   const isToday = !date || date === today;
   const day = data?.date ?? date;
@@ -25,7 +31,21 @@ export function Dashboard({ me }: { me: Me }) {
       <header className="page-head">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">{me.stores.length === 1 ? me.stores[0]!.name : `${me.stores.length} stores`}</p>
+          {me.stores.length > 1 ? (
+            <label className="store-scope">
+              <span className="sr-only">Store</span>
+              <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+                <option value="">All {me.stores.length} stores</option>
+                {me.stores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="muted">{me.stores[0]?.name ?? ""}</p>
+          )}
         </div>
         <div className="day-picker" role="group" aria-label="Day">
           <button type="button" className="icon-btn" aria-label="Previous day" disabled={!day} onClick={() => day && setDate(shift(day, -1))}>

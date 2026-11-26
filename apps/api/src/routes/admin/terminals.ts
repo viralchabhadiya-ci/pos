@@ -43,8 +43,8 @@ export async function terminalRoutes(app: FastifyInstance) {
       `SELECT t.id, t.name, t.provider, t.terminal_ref AS "terminalRef", t.active, t.register_id AS "registerId",
               r.name AS "registerName", s.name AS "storeName"
          FROM payment_terminals t JOIN registers r ON r.id = t.register_id JOIN stores s ON s.id = r.store_id
-        WHERE t.tenant_id = $1 ORDER BY s.code, r.code, t.created_at`,
-      [ctx.tenantId],
+        WHERE t.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[])) ORDER BY s.code, r.code, t.created_at`,
+      [ctx.tenantId, ctx.storeIds],
     );
     return { terminals: rows };
   });
@@ -104,13 +104,13 @@ export async function terminalRoutes(app: FastifyInstance) {
   app.get("/card-transactions", async (req) => {
     const ctx = await app.authAdmin(req);
     const f = ListSchema.parse(req.query);
-    const where = ["c.tenant_id = $1"];
+    const where = ["c.tenant_id = $1", "($2::uuid[] IS NULL OR c.register_id IN (SELECT id FROM registers WHERE store_id = ANY($2::uuid[])))"];
     if (f.status === "approved") where.push("c.status = 'approved'");
     if (f.status === "problem") {
       where.push(CARD_PROBLEM_SQL);
     }
     const sql = where.join(" AND ");
-    const count = await app.db.query(`SELECT COUNT(*)::int AS n FROM card_transactions c WHERE ${sql}`, [ctx.tenantId]);
+    const count = await app.db.query(`SELECT COUNT(*)::int AS n FROM card_transactions c WHERE ${sql}`, [ctx.tenantId, ctx.storeIds]);
     const { rows } = await app.db.query(
       `SELECT c.id, c.kind, c.amount, c.status, c.auth_code AS "authCode", c.card_brand AS "cardBrand", c.card_last4 AS "cardLast4",
               c.message, c.created_at AS "createdAt", t.name AS "terminalName", r.name AS "registerName",
@@ -118,7 +118,7 @@ export async function terminalRoutes(app: FastifyInstance) {
          FROM card_transactions c JOIN payment_terminals t ON t.id = c.terminal_id JOIN registers r ON r.id = c.register_id
          LEFT JOIN payments p ON p.card_transaction_id = c.id LEFT JOIN orders o ON o.id = p.order_id
         WHERE ${sql} ORDER BY c.created_at DESC LIMIT ${f.limit} OFFSET ${f.offset}`,
-      [ctx.tenantId],
+      [ctx.tenantId, ctx.storeIds],
     );
     return { transactions: rows, count: count.rows[0].n };
   });

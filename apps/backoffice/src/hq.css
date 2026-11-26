@@ -1,0 +1,33 @@
+/* Head office: stores side by side, store access on staff, per-store product settings. */
+@media (max-width: 1023px) { .hide-md { display: none; } }
+a.tab { text-decoration: none; display: inline-flex; align-items: center; }
+
+.change { font-weight: 600; white-space: nowrap; }
+.change.up { color: var(--good); }
+.change.down { color: var(--bad); }
+
+.store-table td:first-child { min-width: 200px; }
+.store-table .badge { margin-left: var(--space-2); }
+.share-bar { display: block; height: 6px; margin-top: var(--space-2); border-radius: 999px; background: var(--surface-2); overflow: hidden; max-width: 320px; }
+.share-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.store-table tfoot td { border-top: 1px solid var(--line-strong); }
+.royalty-kpis { margin-bottom: var(--space-4); }
+@media (min-width: 768px) { .royalty-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+.store-checks .check { margin: var(--space-2) 0; }
+.store-checks.indent { padding-left: 34px; margin-bottom: var(--space-3); }
+
+/* Product editor: each store's range and price */
+.per-store { width: 100%; border-collapse: collapse; }
+.per-store th { text-align: left; font-size: var(--text-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: var(--space-2); border-bottom: 1px solid var(--line); }
+.per-store td { padding: var(--space-2); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.per-store tr:last-child td { border-bottom: 0; }
+.per-store input[type="text"], .per-store input:not([type]) { width: 110px; text-align: right; }
+.per-store .check { margin: 0; }
+.per-store .num { text-align: right; white-space: nowrap; }
+.per-store tr.off td:not(:nth-child(2)) { opacity: 0.6; }
+.store-scope { display: block; }
+.store-scope select { width: auto; min-width: 220px; max-width: 100%; margin-top: var(--space-1); }
+.table-wrap.flat-box { box-shadow: none; margin-bottom: var(--space-3); }
+.stock-row.end { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.stock-row.end .btn { margin-top: 0; }

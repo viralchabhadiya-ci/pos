@@ -8,7 +8,7 @@ import { adminAudit } from "../common.js";
 import {
   bad,
   blendCost,
-  checkStore,
+  checkMyStore,
   checkSupplier,
   checkVariants,
   checkWhole,
@@ -24,6 +24,7 @@ import {
   writeMove,
   wrongState,
 } from "./common.js";
+import { storeParam } from "../../../stores.js";
 
 const PoLine = z.object({
   variantId: z.string().uuid(),
@@ -176,8 +177,8 @@ const lockPo = (tx: Tx, ctx: AdminContext, id: string) =>
   mustFind<PoRow>(
     tx,
     `SELECT id, status, supplier_id AS "supplierId", store_id AS "storeId", number FROM purchase_orders
-      WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-    [id, ctx.tenantId],
+      WHERE id = $1 AND tenant_id = $2 AND ($3::uuid[] IS NULL OR store_id = ANY($3::uuid[])) FOR UPDATE`,
+    [id, ctx.tenantId, ctx.storeIds],
     "Purchase order",
   );
 
@@ -196,9 +197,10 @@ export async function purchaseRoutes(app: FastifyInstance) {
       params.push(f.supplierId);
       where.push(`po.supplier_id = $${params.length}`);
     }
-    if (f.storeId) {
-      params.push(f.storeId);
-      where.push(`po.store_id = $${params.length}`);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) {
+      params.push(stores);
+      where.push(`po.store_id = ANY($${params.length}::uuid[])`);
     }
     if (f.q) {
       params.push(`%${f.q}%`);
@@ -231,8 +233,8 @@ export async function purchaseRoutes(app: FastifyInstance) {
               po.closed_at AS "closedAt", u.name AS "createdBy", t.net::int AS net, t.vat::int AS vat, (t.net + t.vat)::int AS total
          FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id JOIN stores st ON st.id = po.store_id
          LEFT JOIN users u ON u.id = po.created_by ${PO_TOTALS}
-        WHERE po.id = $1 AND po.tenant_id = $2`,
-      [req.params.id, ctx.tenantId],
+        WHERE po.id = $1 AND po.tenant_id = $2 AND ($3::uuid[] IS NULL OR po.store_id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
       "Purchase order",
     );
     const [lines, receipts] = await Promise.all([
@@ -262,7 +264,7 @@ export async function purchaseRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const b = PoSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      await checkStore(tx, ctx.tenantId, b.storeId);
+      await checkMyStore(tx, ctx, b.storeId);
       const sup = await checkSupplier(tx, ctx.tenantId, b.supplierId);
       if (!sup.active) throw bad(`${sup.name} is switched off. Switch the supplier on first.`);
       const id = randomUUID();
@@ -285,7 +287,7 @@ export async function purchaseRoutes(app: FastifyInstance) {
     return withTx(app.db, async (tx) => {
       const po = await lockPo(tx, ctx, req.params.id);
       if (po.status !== "draft" && po.status !== "ordered") throw wrongState(`${po.number} has goods received and cannot be changed`);
-      await checkStore(tx, ctx.tenantId, b.storeId);
+      await checkMyStore(tx, ctx, b.storeId);
       await checkSupplier(tx, ctx.tenantId, b.supplierId);
       await tx.query(
         `UPDATE purchase_orders SET supplier_id = $2, store_id = $3, expected_on = $4, notes = $5, updated_at = now() WHERE id = $1`,
@@ -378,7 +380,7 @@ export async function purchaseRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const b = ReceiveDirectSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      await checkStore(tx, ctx.tenantId, b.storeId);
+      await checkMyStore(tx, ctx, b.storeId);
       if (b.supplierId) await checkSupplier(tx, ctx.tenantId, b.supplierId);
       return receiveGoods(tx, ctx, { ...b, supplierId: b.supplierId ?? null, poId: null }, b.lines);
     });
@@ -389,7 +391,8 @@ export async function purchaseRoutes(app: FastifyInstance) {
     const f = Paging.extend({ storeId: z.string().uuid().optional(), supplierId: z.string().uuid().optional() }).parse(req.query);
     const params: unknown[] = [ctx.tenantId];
     const where = ["r.tenant_id = $1"];
-    if (f.storeId) where.push(`r.store_id = $${params.push(f.storeId)}`);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) where.push(`r.store_id = ANY($${params.push(stores)}::uuid[])`);
     if (f.supplierId) where.push(`r.supplier_id = $${params.push(f.supplierId)}`);
     const sql = `FROM goods_receipts r WHERE ${where.join(" AND ")}`;
     const [list, count] = await Promise.all([
@@ -417,8 +420,8 @@ export async function purchaseRoutes(app: FastifyInstance) {
               r.received_at AS "receivedAt", u.name AS "receivedBy"
          FROM goods_receipts r LEFT JOIN purchase_orders po ON po.id = r.po_id LEFT JOIN suppliers s ON s.id = r.supplier_id
          JOIN stores st ON st.id = r.store_id LEFT JOIN users u ON u.id = r.received_by
-        WHERE r.id = $1 AND r.tenant_id = $2`,
-      [req.params.id, ctx.tenantId],
+        WHERE r.id = $1 AND r.tenant_id = $2 AND ($3::uuid[] IS NULL OR r.store_id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
       "Goods receipt",
     );
     const lines = await app.db.query(

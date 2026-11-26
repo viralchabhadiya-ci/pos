@@ -6,7 +6,8 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, download, errorText } from "../lib/api.js";
 import { money, qty, tryParseMoney } from "../lib/format.js";
-import type { Category, Me, Product, Tax } from "../lib/types.js";
+import type { Category, Me, Product, ProductStore, Tax } from "../lib/types.js";
+import "../hq.css";
 import { useLoad } from "../lib/useLoad.js";
 
 export function Products({ me, initialStatus }: { me: Me; initialStatus?: string }) {
@@ -46,7 +47,11 @@ export function Products({ me, initialStatus }: { me: Me; initialStatus?: string
       <header className="page-head">
         <div>
           <h1>Products</h1>
-          <p className="muted">Price changes reach every till within a minute.</p>
+          <p className="muted">
+            {me.user.storeIds === null
+              ? "Price changes reach every till within a minute."
+              : "Head office looks after the catalog and prices. You can update stock for your stores."}
+          </p>
         </div>
         <div className="head-actions">
           <button
@@ -56,12 +61,16 @@ export function Products({ me, initialStatus }: { me: Me; initialStatus?: string
           >
             <Icon name="download" /> Export
           </button>
-          <button type="button" className="btn" onClick={() => setImporting(true)}>
-            <Icon name="upload" /> Import
-          </button>
-          <button type="button" className="btn primary" onClick={() => setEditing("new")} disabled={!refs.data}>
-            <Icon name="plus" /> Add product
-          </button>
+          {me.user.storeIds === null && (
+            <>
+              <button type="button" className="btn" onClick={() => setImporting(true)}>
+                <Icon name="upload" /> Import
+              </button>
+              <button type="button" className="btn primary" onClick={() => setEditing("new")} disabled={!refs.data}>
+                <Icon name="plus" /> Add product
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -323,6 +332,7 @@ function ProductDialog({
   onSaved: () => void;
 }) {
   const toast = useToast();
+  const hq = me.user.storeIds === null;
   const defaultTax = taxes.find((t) => t.active)?.id ?? "";
   const [form, setForm] = useState({
     name: product?.name ?? "",
@@ -400,8 +410,9 @@ function ProductDialog({
 
   return (
     <Modal onClose={onClose} label={product ? `Edit ${product.name}` : "Add product"} wide>
-      <h2>{product ? "Edit product" : "Add product"}</h2>
+      <h2>{product ? (hq ? "Edit product" : product.name) : "Add product"}</h2>
       <form onSubmit={submit} noValidate>
+        <fieldset className="plain-fieldset" disabled={!hq}>
         <div className="form-grid">
           <Field id="pf-name" label="Name" required error={errors.name}>
             {(p) => <input {...p} value={form.name} onChange={(e) => set("name", e.target.value)} autoFocus maxLength={160} />}
@@ -518,7 +529,9 @@ function ProductDialog({
             {busy ? "Saving…" : product ? "Save changes" : "Add product"}
           </button>
         </div>
+        </fieldset>
       </form>
+      {product && hq && me.stores.length > 1 && <PerStoreBox product={product} />}
       {product && <StockBox product={product} me={me} onChanged={onSaved} />}
     </Modal>
   );
@@ -596,6 +609,129 @@ function StockBox({ product, me, onChanged }: { product: Product; me: Me; onChan
         <button type="submit" className="btn" disabled={busy}>
           {busy && <span className="spinner" aria-hidden="true" />}
           {busy ? "Saving…" : "Update stock"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The catalog is central; each store can leave a product out or sell it at its own price.
+ * A store price goes on that store's price list.
+ */
+function PerStoreBox({ product }: { product: Product }) {
+  const toast = useToast();
+  const data = useLoad(() => api<{ basePrice: number; stores: ProductStore[] }>(`/products/${product.id}/stores`), [product.id]);
+  const [rows, setRows] = useState<{ storeId: string; sold: boolean; price: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [bad, setBad] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data.data) setRows(data.data.stores.map((s) => ({ storeId: s.storeId, sold: s.sold, price: money(s.price) })));
+  }, [data.data]);
+
+  if (data.error) return <ErrorState message={data.error} onRetry={data.reload} />;
+  if (!data.data || !rows) return null;
+  const base = data.data.basePrice;
+  const stores = data.data.stores;
+  const dirty = stores.some((s, i) => s.sold !== rows[i]!.sold || tryParseMoney(rows[i]!.price) !== s.price);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    const out = [];
+    for (const [i, r] of rows.entries()) {
+      const price = r.price.trim() === "" ? base : tryParseMoney(r.price);
+      if (price === null || price < 0) {
+        setBad(r.storeId);
+        setError(`Enter a price like 2.50 for ${stores[i]!.name}`);
+        document.getElementById(`ps-${r.storeId}`)?.focus();
+        return;
+      }
+      out.push({ storeId: r.storeId, sold: r.sold, price: price === base ? null : price });
+    }
+    setBad(null);
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/products/${product.id}/stores`, { method: "PUT", body: { stores: out } });
+      toast("Store settings saved. Tills get them within a minute.");
+      void data.reload();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="stock-box" onSubmit={save} noValidate>
+      <h3>
+        <Icon name="store" /> By store
+        <span className="muted"> · normal price {money(base)}</span>
+      </h3>
+      <div className="table-wrap flat-box">
+        <table className="per-store">
+          <caption className="sr-only">Where {product.name} is sold and at what price</caption>
+          <thead>
+            <tr>
+              <th scope="col">Store</th>
+              <th scope="col">Sold here</th>
+              <th scope="col" className="num">Price (AED)</th>
+              <th scope="col" className="num hide-xs">In stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stores.map((s, i) => {
+              const r = rows[i]!;
+              const shared = s.listSharedWith > 0;
+              return (
+                <tr key={s.storeId} className={r.sold ? undefined : "off"}>
+                  <td>
+                    <span className="cell-main">{s.name}</span>
+                    <span className="cell-sub">
+                      {shared ? `Price from ${s.priceListName}, shared` : s.storePrice !== null ? "Own price" : "Normal price"}
+                    </span>
+                  </td>
+                  <td>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={r.sold}
+                        aria-label={`Sold at ${s.name}`}
+                        onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, sold: e.target.checked } : x)))}
+                      />
+                    </label>
+                  </td>
+                  <td className="num">
+                    <input
+                      id={`ps-${s.storeId}`}
+                      inputMode="decimal"
+                      aria-label={`Price at ${s.name}`}
+                      aria-invalid={bad === s.storeId || undefined}
+                      title={shared ? "This store shares a price list. Change it on the Price lists page." : undefined}
+                      disabled={shared}
+                      value={r.price}
+                      onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
+                    />
+                  </td>
+                  <td className="num hide-xs">{qty(s.onHand)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {error && (
+        <p className="form-error" role="alert">
+          <Icon name="alert" /> {error}
+        </p>
+      )}
+      <div className="stock-row end">
+        <span className="muted small">A product left out of a store disappears from that store's tills. Stock and past sales stay.</span>
+        <button type="submit" className="btn" disabled={busy || !dirty}>
+          {busy && <span className="spinner" aria-hidden="true" />}
+          {busy ? "Saving…" : "Save store settings"}
         </button>
       </div>
     </form>

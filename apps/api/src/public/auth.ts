@@ -84,6 +84,8 @@ export async function authApi(db: Db, req: FastifyRequest, reply: FastifyReply, 
     tenantId: key.tenant_id,
     role: "owner",
     name: `API key "${key.name}"`,
+    // An API key works for the whole business.
+    storeIds: null,
     apiKey: { id: key.id, name: key.name, scopes },
   };
 }

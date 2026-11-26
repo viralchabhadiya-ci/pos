@@ -56,10 +56,22 @@ const StoreSchema = z.object({
   receiptFooter: z.string().trim().max(300).nullish(),
   /** Prices for this store; a customer's own list still wins. */
   priceListId: z.string().uuid().nullish(),
+  /** A franchise store pays HQ a royalty and a marketing fee on its net sales. */
+  ownership: z.enum(["owned", "franchise"]).default("owned"),
+  franchisee: z.string().trim().max(200).nullish(),
+  royaltyBp: z.number().int().min(0).max(10000).default(0),
+  marketingFeeBp: z.number().int().min(0).max(10000).default(0),
 });
 
+/** Fees only apply to franchise stores. */
+function fees(body: z.infer<typeof StoreSchema>) {
+  const franchise = body.ownership === "franchise";
+  return [body.ownership, franchise ? empty(body.franchisee) : null, franchise ? body.royaltyBp : 0, franchise ? body.marketingFeeBp : 0];
+}
+
 const STORE_SELECT = `SELECT id, code, name, name_ar AS "nameAr", address, phone, trn, timezone,
-  cash_rounding_step AS "cashRoundingStep", receipt_footer AS "receiptFooter", price_list_id AS "priceListId" FROM stores`;
+  cash_rounding_step AS "cashRoundingStep", receipt_footer AS "receiptFooter", price_list_id AS "priceListId",
+  ownership, franchisee, royalty_bp AS "royaltyBp", marketing_fee_bp AS "marketingFeeBp" FROM stores`;
 
 /** Adds a customer, or changes one when `id` is given. Used by the back office and the public API. */
 export async function saveCustomer(db: Db, ctx: AdminContext, id: string | null, body: z.infer<typeof CustomerSchema>) {
@@ -193,7 +205,10 @@ export async function businessRoutes(app: FastifyInstance) {
 
   app.get("/stores", async (req) => {
     const ctx = await app.authAdmin(req);
-    const { rows } = await app.db.query(`${STORE_SELECT} WHERE tenant_id = $1 ORDER BY code`, [ctx.tenantId]);
+    const { rows } = await app.db.query(
+      `${STORE_SELECT} WHERE tenant_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[])) ORDER BY code`,
+      [ctx.tenantId, ctx.storeIds],
+    );
     return { stores: rows };
   });
 
@@ -222,10 +237,10 @@ export async function businessRoutes(app: FastifyInstance) {
       await withTx(app.db, async (tx) => {
         await tx.query(
           `INSERT INTO stores (id, tenant_id, code, name, name_ar, address, phone, trn, timezone, cash_rounding_step, receipt_footer,
-             price_list_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+             price_list_id, ownership, franchisee, royalty_bp, marketing_fee_bp)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [id, ctx.tenantId, body.code.toUpperCase(), body.name, empty(body.nameAr), empty(body.address), empty(body.phone),
-            empty(body.trn), body.timezone, body.cashRoundingStep, empty(body.receiptFooter), body.priceListId ?? null],
+            empty(body.trn), body.timezone, body.cashRoundingStep, empty(body.receiptFooter), body.priceListId ?? null, ...fees(body)],
         );
         await tx.query("INSERT INTO registers (id, store_id, code, name) VALUES ($1, $2, 'R1', 'Counter 1')", [randomUUID(), id]);
         await adminAudit(tx, ctx, "store.create", "store", id, { name: body.name, code: body.code.toUpperCase() });
@@ -245,10 +260,11 @@ export async function businessRoutes(app: FastifyInstance) {
     await checkPriceList(ctx.tenantId, body.priceListId);
     const res = await app.db.query(
       `UPDATE stores SET name = $3, name_ar = $4, address = $5, phone = $6, trn = $7, timezone = $8,
-              cash_rounding_step = $9, receipt_footer = $10, price_list_id = $11, updated_at = now()
+              cash_rounding_step = $9, receipt_footer = $10, price_list_id = $11, ownership = $12, franchisee = $13,
+              royalty_bp = $14, marketing_fee_bp = $15, updated_at = now()
         WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, ctx.tenantId, body.name, empty(body.nameAr), empty(body.address), empty(body.phone), empty(body.trn),
-        body.timezone, body.cashRoundingStep, empty(body.receiptFooter), body.priceListId ?? null],
+        body.timezone, body.cashRoundingStep, empty(body.receiptFooter), body.priceListId ?? null, ...fees(body)],
     );
     if (!res.rowCount) throw notFound("Store");
     await adminAudit(app.db, ctx, "store.update", "store", req.params.id, body);

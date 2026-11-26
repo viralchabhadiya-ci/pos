@@ -1,3 +1,4 @@
+import { assertStore } from "../../../stores.js";
 import type { AdminContext } from "../../../app.js";
 import type { Db, Tx } from "../../../db.js";
 import { HttpError, notFound } from "../../../errors.js";
@@ -31,6 +32,12 @@ export async function checkStore(db: Db | Tx, tenantId: string, storeId: string)
   const { rows } = await db.query("SELECT id, name FROM stores WHERE id = $1 AND tenant_id = $2", [storeId, tenantId]);
   if (!rows[0]) throw bad("That store does not exist");
   return rows[0] as { id: string; name: string };
+}
+
+/** A store the signed-in user may work on: store managers only reach their own stores. */
+export async function checkMyStore(db: Db | Tx, ctx: AdminContext, storeId: string) {
+  assertStore(ctx, storeId);
+  return checkStore(db, ctx.tenantId, storeId);
 }
 
 export async function checkSupplier(db: Db | Tx, tenantId: string, supplierId: string) {

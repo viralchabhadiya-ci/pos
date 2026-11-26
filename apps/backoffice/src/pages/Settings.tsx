@@ -18,6 +18,15 @@ const ROUNDING = [
   { value: 100, label: "To 1.00" },
 ];
 
+/** "6", "4.5" or "" (0) as basis points; null when it is not a percentage. */
+function percentToBp(input: string): number | null {
+  const t = input.trim().replace(/%$/, "");
+  if (!t) return 0;
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(t)) return null;
+  const n = Math.round(Number(t) * 100);
+  return n <= 10_000 ? n : null;
+}
+
 const KIND_LABEL: Record<TaxKind, string> = { standard: "Standard rated", zero: "Zero rated", exempt: "Exempt" };
 
 export function Settings({ me, onAccountChanged }: { me: Me; onAccountChanged: () => void }) {
@@ -144,6 +153,10 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
     cashRoundingStep: store.cashRoundingStep,
     timezone: store.timezone,
     priceListId: store.priceListId ?? "",
+    ownership: store.ownership ?? "owned",
+    franchisee: store.franchisee ?? "",
+    royalty: store.royaltyBp ? (store.royaltyBp / 100).toString() : "",
+    marketingFee: store.marketingFeeBp ? (store.marketingFeeBp / 100).toString() : "",
   });
   const lists = useLoad(() => api<{ priceLists: PriceList[] }>("/price-lists"), []);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -157,6 +170,12 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "Enter the store name as it should print on receipts.";
     if (form.trn.trim() && !/^\d{15}$/.test(form.trn.trim())) errs.trn = "A TRN has 15 digits.";
+    const royaltyBp = percentToBp(form.royalty);
+    const marketingFeeBp = percentToBp(form.marketingFee);
+    if (form.ownership === "franchise") {
+      if (royaltyBp === null) errs.royalty = "Enter a percentage from 0 to 100, e.g. 6 or 4.5.";
+      if (marketingFeeBp === null) errs.marketingFee = "Enter a percentage from 0 to 100, e.g. 2.";
+    }
     setErrors(errs);
     if (Object.keys(errs).length) {
       document.getElementById(id(Object.keys(errs)[0]!))?.focus();
@@ -165,10 +184,14 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
     setBusy(true);
     setFormError(null);
     try {
+      const { royalty: _r, marketingFee: _m, ...rest } = form;
       await api(`/stores/${store.id}`, {
         method: "PUT",
         body: {
-          ...form,
+          ...rest,
+          franchisee: form.franchisee.trim() || null,
+          royaltyBp: form.ownership === "franchise" ? royaltyBp ?? 0 : 0,
+          marketingFeeBp: form.ownership === "franchise" ? marketingFeeBp ?? 0 : 0,
           nameAr: form.nameAr || null,
           address: form.address || null,
           phone: form.phone || null,
@@ -240,6 +263,29 @@ function StoreForm({ store, owner, onSaved }: { store: Store; owner: boolean; on
         <Field label="Receipt footer" hint="A thank-you line, return policy or both. Use | to start a new line, e.g. English | Arabic.">
           {(p) => <textarea {...p} rows={2} value={form.receiptFooter} onChange={(e) => set("receiptFooter", e.target.value)} maxLength={300} />}
         </Field>
+        <div className="form-grid">
+          <Field label="Who runs this store" hint="A franchise store pays head office a share of its sales. See Stores › Franchise royalties.">
+            {(p) => (
+              <select {...p} value={form.ownership} onChange={(e) => set("ownership", e.target.value as "owned" | "franchise")}>
+                <option value="owned">Our own store</option>
+                <option value="franchise">Franchise</option>
+              </select>
+            )}
+          </Field>
+          {form.ownership === "franchise" && (
+            <>
+              <Field label="Franchisee">
+                {(p) => <input {...p} value={form.franchisee} onChange={(e) => set("franchisee", e.target.value)} maxLength={200} placeholder="Company name" />}
+              </Field>
+              <Field id={id("royalty")} label="Royalty %" error={errors.royalty} hint="Of net sales before VAT.">
+                {(p) => <input {...p} inputMode="decimal" value={form.royalty} onChange={(e) => set("royalty", e.target.value)} placeholder="0" />}
+              </Field>
+              <Field id={id("marketingFee")} label="Marketing fee %" error={errors.marketingFee} hint="Of net sales before VAT.">
+                {(p) => <input {...p} inputMode="decimal" value={form.marketingFee} onChange={(e) => set("marketingFee", e.target.value)} placeholder="0" />}
+              </Field>
+            </>
+          )}
+        </div>
         {formError && (
           <p className="form-error" role="alert">
             <Icon name="alert" /> {formError}

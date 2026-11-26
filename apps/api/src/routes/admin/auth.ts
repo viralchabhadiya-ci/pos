@@ -84,14 +84,19 @@ export async function authRoutes(app: FastifyInstance) {
     const { rows } = await app.db.query(
       `SELECT t.name, t.currency, t.status, t.trial_ends_at, COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'code', s.code, 'timezone', s.timezone)
                 ORDER BY s.code) FILTER (WHERE s.id IS NOT NULL), '[]') AS stores
-         FROM tenants t LEFT JOIN stores s ON s.tenant_id = t.id WHERE t.id = $1 GROUP BY t.id`,
-      [ctx.tenantId],
+         FROM tenants t LEFT JOIN stores s ON s.tenant_id = t.id AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[]))
+        WHERE t.id = $1 GROUP BY t.id`,
+      [ctx.tenantId, ctx.storeIds],
     );
     const usage = await planUsage(app.db, ctx.tenantId);
+    // Every store of the business, for picking the other end of a stock transfer.
+    const all = await app.db.query("SELECT id, name, code FROM stores WHERE tenant_id = $1 ORDER BY code", [ctx.tenantId]);
     return {
-      user: { id: ctx.userId, name: ctx.name, role: ctx.role },
+      // storeIds null: head office, sees every store. A list: a store manager.
+      user: { id: ctx.userId, name: ctx.name, role: ctx.role, storeIds: ctx.storeIds },
       tenant: { id: ctx.tenantId, name: rows[0].name, currency: rows[0].currency },
       stores: rows[0].stores,
+      transferStores: all.rows,
       account: { status: rows[0].status, trialEndsAt: rows[0].trial_ends_at, ...usage },
       support: ctx.support ?? null,
     };
