@@ -45,6 +45,9 @@ export interface Cart {
   refundOfNumber?: string;
   /** On a refund: what the original sale took in points, the most that goes back as points. */
   refundPointsRoom?: number;
+  /** An online (click-and-collect) order this sale hands over. */
+  webOrderId?: string | null;
+  webOrderNumber?: string;
 }
 
 export const emptyCart = (): Cart => ({ lines: [], orderDiscountBp: 0, customerId: null, refundOfOrderId: null });

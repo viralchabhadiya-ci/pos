@@ -593,3 +593,10 @@ textarea { width: 100%; font: inherit; padding: var(--space-2) var(--space-3); b
 .segment-count { background: var(--accent-soft); border-radius: var(--radius-sm); padding: var(--space-3) var(--space-4); margin: var(--space-2) 0 0; }
 .segment-count .hint { margin-top: var(--space-1); }
 .push-start { margin-inline-end: auto; }
+
+/* Online store */
+.spacer { height: var(--space-3); }
+.check-col { width: 44px; }
+.check-col input, .switch input { width: 20px; height: 20px; min-height: 0; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; max-width: 46ch; }
+.switch { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; min-height: var(--tap); }

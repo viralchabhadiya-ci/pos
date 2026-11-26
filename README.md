@@ -18,6 +18,7 @@ Research: [Odoo POS Blueprint](https://claude.ai/artifact/1kkW4wY7pSKbTTkpX2akY4
 | `apps/backoffice` | Back office web app for owners and managers: sales dashboard, products and prices, categories, stock, staff and PINs, registers and device pairing, bill search and detail. Works on desktop and phone. |
 | `apps/owner` | Owner app: a phone-first PWA for owners and managers. Live sales, alerts, approving till requests, and the daily summary email. Installs to the home screen. |
 | `apps/staff` | Staff app: a phone PWA for the shop floor. Price check, stock counts, checking in deliveries and asking for shelf labels, with the phone camera as the scanner. |
+| `apps/shop` | Online shop for customers: a phone-first web page per business (`#/<shop>`). Browse, basket, click-and-collect order, order status page with the pickup code. English and Arabic. |
 | `packages/escpos` | Printer-neutral receipt document and its ESC/POS encoding (text, rows, barcode, QR, cut, drawer kick) for 80 mm and 58 mm thermal printers. |
 
 ## Run it locally
@@ -35,6 +36,7 @@ pnpm dev:till                  # http://localhost:5173
 pnpm dev:backoffice            # http://localhost:5174
 pnpm dev:owner                 # http://localhost:5175
 pnpm dev:staff                 # http://localhost:5176
+pnpm dev:shop                  # http://localhost:5177/#/<shop address>
 ```
 
 Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and open a shift.
@@ -221,6 +223,24 @@ Back office, **Customers** (birthday, tags and consent per channel on each custo
   marketing template whose body is one `{{1}}`; `WHATSAPP_TEMPLATE_LANG` defaults to `en`). Without them,
   messages are written to the server log and the Marketing page says so. Run one API process: the worker
   that sends campaigns runs inside it. Migration `122_crm.sql`.
+
+### Online store and click-and-collect
+
+Customers order on the shop page (`apps/shop`, http://localhost:5177/#/demo-minimart) and **pay when they
+collect**. Set it up in back office → Online store: **Settings** (owner) picks the shop address, the pickup
+stores, a ready time, a minimum order, a note and whether to sell only what is in stock; **Products** chooses
+what is on the shop and adds a description. Prices are each store's own (its price list), with VAT included,
+and are checked again on the server when the order is placed.
+
+Orders show in back office → Online store → **Orders** and on the till under **Online orders**. Mark one
+**Packed and ready** and the customer gets an SMS (or email, if they gave one). When they arrive, the cashier
+taps **Ring up**: the order goes into the cart as a normal sale, so payment, VAT, stock, receipts and
+e-invoices all work as usual, and the online order is marked collected. Customers can cancel until the shop
+accepts the order. Limits: 3 open orders per phone number and 10 orders per hour from one address.
+
+Set `SHOP_URL` on the server to where `apps/shop` is served (for links in messages and the back office).
+Build the shop with `VITE_API_URL` pointing to the API, or serve it so `/shop-api` reaches the API. Online card
+payment and Shopify/WooCommerce sync are not in this step. Migration `123_online_store.sql`.
 
 ### Scales and labels
 
