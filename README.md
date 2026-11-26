@@ -242,6 +242,23 @@ Set `SHOP_URL` on the server to where `apps/shop` is served (for links in messag
 Build the shop with `VITE_API_URL` pointing to the API, or serve it so `/shop-api` reaches the API. Online card
 payment and Shopify/WooCommerce sync are not in this step. Migration `123_online_store.sql`.
 
+### TV screens (signage)
+
+Show pictures, price boards, offers and messages on TVs in the stores: back office → **Screens**. Any TV, TV
+stick or small PC with a web browser works. On the TV, open `<PUBLIC_URL>/tv` (http://localhost:3000/tv in
+development). It shows a 6-digit code; enter it under **Connect a TV**. The TV remembers its screen, asks for
+changes every minute and keeps playing what it has when the internet drops.
+
+- **Playlists** (head office): slides in order. A slide is a picture, a price board (a category's products at
+  that store's prices, VAT included, paging through long lists), an offer (one of your promotions; shown only
+  while it runs at that store), a message, or a video from an https:// address. Each slide can be limited to
+  dates, days and hours in the store's time, including past midnight.
+- **Pictures** (head office): PNG, JPEG, WebP or GIF up to 3 MB, stored in the database.
+- **Screens** (each store's managers): store, playlist, English/Arabic/both, and portrait for a TV mounted on its
+  side. **New link** stops a TV on the old link; it goes back to showing a code.
+
+Migration `124_signage.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

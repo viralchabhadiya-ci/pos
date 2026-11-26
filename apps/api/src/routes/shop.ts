@@ -60,7 +60,7 @@ export async function loadShop(db: Db | Tx, slug: string): Promise<Shop> {
 }
 
 /** Taxes of the business, as the pricing engine wants them. */
-async function taxMap(db: Db | Tx, tenantId: string) {
+export async function taxMap(db: Db | Tx, tenantId: string) {
   const { rows } = await db.query<TaxRate>(
     `SELECT id, name, rate_bp AS "rateBp", price_included AS "priceIncluded" FROM taxes WHERE tenant_id = $1`,
     [tenantId],
@@ -94,7 +94,7 @@ async function storeProducts(db: Db | Tx, tenantId: string, storeId: string, var
 }
 
 /** The price with VAT for one unit, as the shop shows it. */
-const grossOf = (price: number, taxId: string | null, taxes: Record<string, TaxRate>) =>
+export const grossOf = (price: number, taxId: string | null, taxes: Record<string, TaxRate>) =>
   priceOrder([{ id: "x", variantId: null, name: "", qty: 1, unitPrice: price, taxId }], { taxes }).total;
 
 export async function shopRoutes(app: FastifyInstance) {

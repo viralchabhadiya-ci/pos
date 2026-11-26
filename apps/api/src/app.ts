@@ -23,6 +23,7 @@ import { approvalRoutes } from "./routes/approvals.js";
 import { staffRoutes } from "./routes/staff.js";
 import { unsubscribeRoutes } from "./routes/unsubscribe.js";
 import { shopRoutes } from "./routes/shop.js";
+import { signageRoutes } from "./routes/signage.js";
 import { webOrderTillRoutes } from "./routes/webOrders.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
@@ -158,6 +159,7 @@ export async function buildApp(
   await app.register(staffRoutes);
   await app.register(unsubscribeRoutes);
   await app.register(shopRoutes);
+  await app.register(signageRoutes);
   await app.register(webOrderTillRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });

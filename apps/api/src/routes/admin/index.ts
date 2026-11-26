@@ -9,6 +9,7 @@ import { loyaltyRoutes } from "./loyalty.js";
 import { scaleRoutes } from "./scales.js";
 import { marketingRoutes } from "./marketing.js";
 import { onlineStoreRoutes } from "./onlineStore.js";
+import { signageAdminRoutes } from "./signage.js";
 import { labelRequestRoutes } from "./labelRequests.js";
 import { priceListRoutes } from "./priceLists.js";
 import { productCsvRoutes } from "./products-csv.js";
@@ -47,5 +48,6 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(hqRoutes);
   await app.register(marketingRoutes);
   await app.register(onlineStoreRoutes);
+  await app.register(signageAdminRoutes);
   await app.register(developerRoutes);
 }
