@@ -145,9 +145,10 @@ export async function completeOrder(
       customerId: cart.customerId,
       refundOfOrderId: cart.refundOfOrderId,
       ...(cart.webOrderId ? { webOrderId: cart.webOrderId } : {}),
+      ...(cart.tabId ? { tabId: cart.tabId } : {}),
       orderDiscountBp: cart.orderDiscountBp,
       createdAt: new Date().toISOString(),
-      lines: cart.lines.map(({ uom: _uom, listPrice: _list, ...l }) => ({
+      lines: cart.lines.map(({ uom: _uom, listPrice: _list, sentQty: _sent, ...l }) => ({
         ...l,
         discountBp: l.discountBp ?? 0,
         promoDiscount: l.promoDiscount ?? 0,
@@ -222,4 +223,9 @@ export async function findSale(number: string): Promise<LocalOrder | { id: strin
   } catch {
     return null;
   }
+}
+
+/** Queues a kitchen ticket for the server (kitchen screens); it waits there while offline. */
+export async function queueKitchenTicket(ticket: { id: string }) {
+  await enqueue("kitchen.ticket", ticket.id, ticket);
 }

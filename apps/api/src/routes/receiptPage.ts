@@ -77,7 +77,7 @@ export async function receiptPageRoutes(app: FastifyInstance) {
     <tbody>${lines.rows
       .map(
         (l) =>
-          `<tr><td>${esc(l.name)}${l.note ? `<br><small class="muted">${esc(l.note)}</small>` : ""}${
+          `<tr><td>${esc(l.name)}${(l.modifiers ?? []).map((x: { name: string; price: number }) => `<br><small class="muted">+ ${esc(x.name)}${x.price ? ` ${m(x.price)}` : ""}</small>`).join("")}${l.note ? `<br><small class="muted">${esc(l.note)}</small>` : ""}${
             l.gift_card_code ? `<br><small class="muted">Card ${esc(maskGiftCard(l.gift_card_code))} · outside the scope of VAT</small>` : ""
           }<br><small class="muted">${m(l.unit_price)} each${
             l.line_discount + l.promo_discount + l.order_discount ? ` · discount ${m(Math.abs(l.line_discount + l.promo_discount + l.order_discount))}` : ""

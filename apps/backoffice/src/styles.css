@@ -624,3 +624,22 @@ textarea { width: 100%; font: inherit; padding: var(--space-2) var(--space-3); b
 .head-actions > .hint { margin: 0; flex: 1 1 280px; }
 .btn.disabled { opacity: 0.5; pointer-events: none; }
 .btn:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Restaurant */
+.table-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--space-2); }
+.table-card { width: 100%; min-height: 72px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--fg); text-align: start; cursor: pointer; }
+.table-card:hover { background: var(--surface-2); }
+.table-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.table-card.busy { border-color: var(--accent); background: var(--accent-soft); }
+.options-edit { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-3) var(--space-4) var(--space-4); margin: 0 0 var(--space-4); min-width: 0; }
+.options-edit legend { font-weight: 600; padding: 0 var(--space-1); }
+.option-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(80px, 1fr) 44px; gap: var(--space-2); align-items: center; margin-bottom: var(--space-2); }
+.option-row.head { font-size: var(--text-xs); color: var(--muted); margin-bottom: 4px; }
+@media (max-width: 560px) {
+  .option-row { grid-template-columns: minmax(0, 1fr) 96px 44px; grid-template-areas: "n p x" "a a a"; padding-bottom: var(--space-2); border-bottom: 1px solid var(--line); }
+  .option-row > :nth-child(1) { grid-area: n; }
+  .option-row > :nth-child(2) { grid-area: a; }
+  .option-row > :nth-child(3) { grid-area: p; }
+  .option-row > :nth-child(4) { grid-area: x; }
+  .option-row.head { display: none; }
+}

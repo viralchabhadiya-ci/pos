@@ -42,6 +42,7 @@ export function receiptDoc(
   // their Arabic words instead of jumping across the English half.
   const L = (en: string, arabic: string) => (ar ? `${en} / \u2068${arabic}\u2069` : en);
   const notes = new Map(order.lines.map((l) => [l.id, l.note]));
+  const mods = new Map(order.lines.map((l) => [l.id, l.modifiers ?? []]));
   const variants = new Map(order.lines.map((l) => [l.id, l.variantId]));
   const refund = order.refundOfOrderId !== null;
   const date = new Intl.DateTimeFormat("en-GB", {
@@ -70,6 +71,7 @@ export function receiptDoc(
     if (l.giftCardCode) blocks.push({ type: "text", text: `  ${L("Outside the scope of VAT", "خارج نطاق الضريبة")}` });
     const nameAr = ar ? opts.arabicNames?.get(variants.get(l.id) ?? "") : null;
     if (nameAr) blocks.push({ type: "text", text: nameAr });
+    for (const m of mods.get(l.id) ?? []) blocks.push({ type: "text", text: `  + ${m.name}${m.price ? ` ${money(m.price)}` : ""}` });
     blocks.push({ type: "row", left: `  ${qtyText(Math.abs(l.qty), uom)} x ${money(l.unitPrice)}${discount}`, right: money(l.gross) });
     const note = notes.get(l.id);
     if (note) blocks.push({ type: "text", text: `  ${L("Note", "ملاحظة")}: ${note}` });
@@ -197,4 +199,25 @@ export function setReceiptLang(lang: ReceiptLang) {
 
 export async function openDrawerOnHub() {
   await request("/hub/drawer", { method: "POST", body: {} });
+}
+
+/** A kitchen ticket: big table name, then what to make (or stop making). */
+export function kitchenDoc(
+  ticket: { label: string; guests?: number | null; lines: { name: string; qty: number; modifiers: string[]; note?: string | null }[]; createdAt: string },
+  opts: { by: string; timezone: string },
+): ReceiptDoc {
+  const time = new Intl.DateTimeFormat("en-GB", { timeStyle: "short", timeZone: opts.timezone }).format(new Date(ticket.createdAt));
+  const blocks: Block[] = [
+    { type: "text", text: ticket.label, align: "center", bold: true, double: true },
+    { type: "row", left: `${time} · ${opts.by}`, right: ticket.guests ? `${ticket.guests} guests` : "" },
+    { type: "rule" },
+  ];
+  for (const l of ticket.lines) {
+    const qty = qtyText(Math.abs(l.qty), Number.isInteger(l.qty) ? "unit" : "kg");
+    blocks.push({ type: "text", text: `${l.qty < 0 ? "CANCEL " : ""}${qty} x ${l.name}`, bold: true, double: true });
+    for (const m of l.modifiers) blocks.push({ type: "text", text: `   ${m}`, bold: true });
+    if (l.note) blocks.push({ type: "text", text: `   "${l.note}"` });
+  }
+  blocks.push({ type: "feed", lines: 2 });
+  return { blocks, cut: true, openDrawer: false };
 }

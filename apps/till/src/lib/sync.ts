@@ -56,9 +56,14 @@ export async function pullCatalog() {
     priceListItems?: never[];
     loyalty?: (LoyaltySettings & { id: string })[];
     scale?: { id: string; rules: ScaleBarcodeRule[] }[];
+    modifierGroups?: never[];
+    tables?: never[];
     store?: DeviceSetup["store"] | null;
   }>(`/sync/catalog${query}`);
-  const tables = [db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.promotions, db.priceLists, db.priceListItems, db.meta];
+  const tables = [
+    db.taxes, db.categories, db.products, db.variants, db.paymentMethods, db.users, db.promotions, db.priceLists, db.priceListItems,
+    db.modifierGroups, db.diningTables, db.meta,
+  ];
   await db.transaction("rw", tables, async () => {
     await db.taxes.bulkPut(data.taxes);
     await db.categories.bulkPut(data.categories);
@@ -70,6 +75,8 @@ export async function pullCatalog() {
     await db.promotions.bulkPut(data.promotions ?? []);
     await db.priceLists.bulkPut(data.priceLists ?? []);
     await db.priceListItems.bulkPut(data.priceListItems ?? []);
+    await db.modifierGroups.bulkPut(data.modifierGroups ?? []);
+    await db.diningTables.bulkPut(data.tables ?? []);
     if (data.loyalty?.length) {
       const { id: _id, ...settings } = data.loyalty[0]!;
       await db.setMeta("loyalty", settings);
@@ -137,6 +144,7 @@ export async function pushOutbox(): Promise<void> {
       if (first.kind === "session.open") await request("/sessions/open", { body: first.payload });
       else if (first.kind === "cash.move") await request("/cash-moves", { body: first.payload });
       else if (first.kind === "till.event") await request("/till-events", { body: first.payload });
+      else if (first.kind === "kitchen.ticket") await request("/kitchen-tickets", { body: first.payload });
       else if (first.kind === "session.close") {
         const { sessionId, ...body } = first.payload as { sessionId: string };
         await request(`/sessions/${sessionId}/close`, { body });

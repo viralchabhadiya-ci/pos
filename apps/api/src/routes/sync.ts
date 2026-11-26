@@ -15,7 +15,7 @@ export async function syncRoutes(app: FastifyInstance) {
     const params = [device.tenantId, since ?? "-infinity"];
     const q = (sql: string) => app.db.query(sql, params).then((r) => r.rows);
 
-    const [taxes, categories, products, variants, paymentMethods, users, stores, promotions, priceLists, priceListItems, loyalty, scale] = await Promise.all([
+    const [taxes, categories, products, variants, paymentMethods, users, stores, promotions, priceLists, priceListItems, loyalty, scale, modifierGroups, tables] = await Promise.all([
       q(`SELECT id, name, rate_bp AS "rateBp", price_included AS "priceIncluded", kind, active
            FROM taxes WHERE tenant_id = $1 AND updated_at > $2`),
       q(`SELECT id, parent_id AS "parentId", name, name_ar AS "nameAr", sort, active
@@ -23,7 +23,7 @@ export async function syncRoutes(app: FastifyInstance) {
       // A product the store leaves out of its range goes out as switched off.
       app.db
         .query(
-          `SELECT p.id, p.category_id AS "categoryId", p.name, p.name_ar AS "nameAr", p.uom, p.tax_id AS "taxId",
+          `SELECT p.id, p.category_id AS "categoryId", p.name, p.name_ar AS "nameAr", p.uom, p.tax_id AS "taxId", p.modifier_group_ids AS "modifierGroupIds",
                   (p.active AND NOT EXISTS (SELECT 1 FROM store_hidden_products h WHERE h.product_id = p.id AND h.store_id = $3)) AS active
              FROM products p WHERE p.tenant_id = $1 AND p.updated_at > $2`,
           [...params, device.storeId],
@@ -68,6 +68,15 @@ export async function syncRoutes(app: FastifyInstance) {
            FROM loyalty_settings WHERE tenant_id = $1 AND updated_at > $2`),
       // How the business's scales print barcodes, one row keyed by the business.
       q(`SELECT tenant_id AS id, rules FROM scale_settings WHERE tenant_id = $1 AND updated_at > $2`),
+      q(`SELECT id, name, name_ar AS "nameAr", min_choices AS "minChoices", max_choices AS "maxChoices", options, sort, active
+           FROM modifier_groups WHERE tenant_id = $1 AND updated_at > $2`),
+      // Restaurant tables of this till's store.
+      app.db
+        .query(
+          `SELECT id, area, name, seats, sort, active FROM dining_tables WHERE store_id = $1 AND updated_at > $2`,
+          [device.storeId, since ?? "-infinity"],
+        )
+        .then((r) => r.rows),
     ]);
     return {
       serverTime,
@@ -83,6 +92,8 @@ export async function syncRoutes(app: FastifyInstance) {
       priceListItems,
       loyalty,
       scale,
+      modifierGroups,
+      tables,
       store: stores[0] ?? null,
     };
   });
