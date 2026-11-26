@@ -247,6 +247,7 @@ export const AR: Record<string, string> = {
   Mobile: "الجوال",
   "Finding customers needs the connection.": "البحث عن العملاء يحتاج إلى الاتصال.",
   "Adding a customer needs the connection.": "إضافة عميل تحتاج إلى الاتصال.",
+  "Customer agrees to get offers by SMS and WhatsApp": "يوافق العميل على تلقي العروض عبر الرسائل النصية وواتساب",
   Coupon: "قسيمة",
   "Add coupon": "إضافة قسيمة",
   "Coupons: {codes}": "القسائم: {codes}",

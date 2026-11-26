@@ -37,6 +37,7 @@ const CustomerSchema = z.object({
   phone: z.string().max(30).optional(),
   email: z.string().email().optional(),
   trn: z.string().max(20).optional(),
+  marketingConsent: z.boolean().optional(),
 });
 
 const BlockSchema = z.discriminatedUnion("type", [

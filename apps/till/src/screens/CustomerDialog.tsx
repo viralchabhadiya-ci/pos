@@ -40,6 +40,7 @@ export function CustomerDialog({
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -71,7 +72,7 @@ export function CustomerDialog({
     setError(null);
     const c = { id: crypto.randomUUID(), name: name.trim(), phone: phone.trim() || null };
     try {
-      await request("/customers", { body: { id: c.id, name: c.name, ...(c.phone ? { phone: c.phone } : {}) } });
+      await request("/customers", { body: { id: c.id, name: c.name, ...(c.phone ? { phone: c.phone, marketingConsent: consent } : {}) } });
       onPick({ ...c, priceListId: null, points: 0 });
     } catch (err) {
       setError(err instanceof OfflineError ? t("Adding a customer needs the connection.") : (err as Error).message);
@@ -120,6 +121,12 @@ export function CustomerDialog({
           <input id="cust-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoFocus />
           <label htmlFor="cust-phone">{t("Mobile")}</label>
           <input id="cust-phone" type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={30} placeholder="+971 50 123 4567" />
+          {phone.trim() && (
+            <label className="check-row">
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span>{t("Customer agrees to get offers by SMS and WhatsApp")}</span>
+            </label>
+          )}
         </form>
       )}
       {error && (

@@ -105,6 +105,12 @@ export interface Customer {
   spent?: number;
   lastVisit?: string | null;
   points?: number;
+  birthMonth?: number | null;
+  birthDay?: number | null;
+  tags?: string[];
+  consent?: { email: boolean; sms: boolean; whatsapp: boolean };
+  consentAt?: string | null;
+  consentSource?: string | null;
 }
 
 export interface LoyaltySettings {

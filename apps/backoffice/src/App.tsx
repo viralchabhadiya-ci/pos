@@ -12,6 +12,7 @@ import { EInvoicing } from "./pages/EInvoicing.js";
 import { Devices } from "./pages/Devices.js";
 import { Login } from "./pages/Login.js";
 import { Loyalty } from "./pages/Loyalty.js";
+import { Marketing } from "./pages/Marketing.js";
 import { Signup } from "./pages/Signup.js";
 import { AccountBanner } from "./components/AccountBanner.js";
 import { OrderDetail } from "./pages/OrderDetail.js";
@@ -43,6 +44,7 @@ const NAV: { path: string; label: string; icon: IconName; hq?: boolean; multi?: 
   { path: "labels", label: "Scales & labels", icon: "printer" },
   { path: "loyalty", label: "Loyalty & gift cards", icon: "gift", hq: true },
   { path: "customers", label: "Customers", icon: "user" },
+  { path: "marketing", label: "Marketing", icon: "megaphone", hq: true },
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
   { path: "audit", label: "Audit log", icon: "history", hq: true },
@@ -129,6 +131,8 @@ export function App() {
         return <Inventory me={me} route={route.slice(1)} />;
       case "customers":
         return <Customers me={me} />;
+      case "marketing":
+        return <Marketing me={me} tab={route[1]} />;
       case "labels":
         return <Labels me={me} />;
       case "loyalty":

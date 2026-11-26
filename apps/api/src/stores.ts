@@ -54,6 +54,9 @@ const HQ_WRITE = [
   /^\/report-settings$/,
   /^\/terminals(\/|$)/,
   /^\/gift-cards\/[^/]+(\/|$)/,
+  // Marketing reaches customers of every store.
+  /^\/segments(\/|$)/,
+  /^\/campaigns(\/|$)/,
 ];
 
 /**
