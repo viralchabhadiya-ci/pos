@@ -18,6 +18,7 @@ import { salesRoutes } from "./sales.js";
 import { staffRoutes } from "./staff.js";
 import { inventoryRoutes } from "./inventory/index.js";
 import { hqRoutes } from "./hq.js";
+import { developerRoutes } from "./developers.js";
 
 /** The back office API for owners and managers, mounted under /admin. */
 export async function adminRoutes(app: FastifyInstance) {
@@ -40,4 +41,5 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(loyaltyRoutes);
   await app.register(scaleRoutes);
   await app.register(hqRoutes);
+  await app.register(developerRoutes);
 }

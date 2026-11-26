@@ -38,7 +38,7 @@ export function assertRecordStore(ctx: Pick<AdminContext, "storeIds">, storeIds:
   if (!storeIds.some((id) => id && ctx.storeIds!.includes(id))) throw notFound(what);
 }
 
-const HQ_ANY = [/^\/accounting(\/|$)/, /^\/einvoic/, /^\/orders\/[^/]+\/einvoice$/, /^\/audit$/, /^\/reports\/royalties$/, /^\/reports\/daily-summary/, /^\/report-schedules/];
+const HQ_ANY = [/^\/accounting(\/|$)/, /^\/einvoic/, /^\/orders\/[^/]+\/einvoice$/, /^\/audit$/, /^\/reports\/royalties$/, /^\/reports\/daily-summary/, /^\/report-schedules/, /^\/developers/, /^\/api-keys/, /^\/webhooks/];
 const HQ_WRITE = [
   /^\/stores(\/|$)/,
   /^\/products$/,

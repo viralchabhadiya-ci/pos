@@ -25,6 +25,7 @@ import { Staff } from "./pages/Staff.js";
 import { Inventory } from "./pages/inventory/Inventory.js";
 import { Labels } from "./pages/Labels.js";
 import { Stores } from "./pages/Stores.js";
+import { Developers } from "./pages/Developers.js";
 
 /** hq: head office only. A store manager (limited to some stores) does not see these. */
 const NAV: { path: string; label: string; icon: IconName; hq?: boolean; multi?: boolean }[] = [
@@ -45,6 +46,7 @@ const NAV: { path: string; label: string; icon: IconName; hq?: boolean; multi?: 
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
   { path: "audit", label: "Audit log", icon: "history", hq: true },
+  { path: "developers", label: "Developers", icon: "key", hq: true },
   { path: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -131,6 +133,8 @@ export function App() {
         return <Labels me={me} />;
       case "loyalty":
         return <Loyalty me={me} cardId={route[1] === "cards" ? route[2] : undefined} />;
+      case "developers":
+        return <Developers me={me} route={route.slice(1)} />;
       case "audit":
         return <Audit />;
       case "settings":

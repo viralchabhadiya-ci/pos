@@ -358,6 +358,33 @@ Mail settings on the API server:
 Build the owner app with `VITE_API_URL` when the API is on another address, and
 `VITE_BACKOFFICE_URL` to link alerts to the back office pages that deal with them.
 
+### Public API and webhooks
+
+Back office → **Developers** lets the owner connect other apps (online shop, ERP, accounting,
+delivery):
+
+- **API keys** with scopes (`products:read`, `orders:read`, `inventory:write` …), a per-key limit of
+  requests a minute (120 by default, `429` with `Retry-After` above it) and an optional end date. The
+  key is shown once; only its SHA-256 is stored. Changes made with a key are audited under the key's name.
+- **REST API** under `/v1`: stores, products (list, get, add, change), customers, orders with lines
+  and payments, stock per store and adjustments, daily sales. Lists use cursors and `updatedSince`
+  (`syncedSince` for orders, since offline tills sync late). POSTs take an `Idempotency-Key`.
+- **Docs:** `GET /docs` (readable page) and `GET /v1/openapi.json` (OpenAPI 3.1).
+- **Webhooks** for `order.created`, `order.refunded`, `customer.*`, `product.*`, `stock.low` and
+  `session.closed`. Events are queued in the same transaction as the change, sent by a worker in the
+  API process with a `POS-Signature: t=…,v1=HMAC-SHA256(secret, "t.body")` header, retried 8 times over
+  about 2 days, and the endpoint is turned off after 3 days of failures. Every try is in the delivery
+  log, and the owner can send a test event or resend any delivery.
+
+Webhook addresses must be public `https`; private, loopback and cloud metadata addresses are refused,
+also after DNS, and redirects are not followed. For local testing only:
+
+| Variable | Meaning |
+| --- | --- |
+| `WEBHOOK_ALLOW_HTTP=1` | Allow `http://` webhook addresses. |
+| `WEBHOOK_ALLOW_PRIVATE=1` | Allow private and local addresses, e.g. a receiver on your own PC. |
+| `PUBLIC_API_URL` | Server address shown in the OpenAPI document. |
+
 ### With a store hub
 
 ```bash

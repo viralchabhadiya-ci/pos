@@ -195,6 +195,9 @@ describe("sales seen by a store manager", () => {
       ["GET", `/reports/royalties?from=${today()}&to=${today()}`],
       ["PUT", `/products/${randomUUID()}/stores`, { stores: [] }],
       ["GET", "/einvoicing/settings"],
+      ["GET", "/report-schedules"],
+      ["GET", "/api-keys"],
+      ["GET", `/reports/sales?from=${today()}&to=${today()}&groupBy=staff&storeId=${ctx.data.storeId}`],
     ];
     for (const [m, url, body] of blocked) {
       const res = await api(m, url, body, manager);
@@ -349,5 +352,8 @@ describe("head office routes", () => {
     expect(isHqOnly("PUT", "/admin/report-settings/me")).toBe(false);
     expect(isHqOnly("PUT", "/admin/report-settings")).toBe(true);
     expect(isHqOnly("POST", "/admin/transfers")).toBe(false);
+    expect(isHqOnly("GET", "/admin/report-schedules")).toBe(true);
+    expect(isHqOnly("POST", "/admin/api-keys")).toBe(true);
+    expect(isHqOnly("GET", "/admin/webhooks")).toBe(true);
   });
 });
