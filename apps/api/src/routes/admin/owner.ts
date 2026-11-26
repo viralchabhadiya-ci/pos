@@ -13,6 +13,7 @@ import {
 import { renderDailyEmail } from "../../reports/render.js";
 import { expireApprovals } from "../approvals.js";
 import { adminAudit, forbidden } from "./common.js";
+import { storeParam } from "../../stores.js";
 
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-01-31");
 const StoreQuery = z.object({ storeId: z.string().uuid().optional() });
@@ -57,7 +58,7 @@ export async function ownerRoutes(app: FastifyInstance) {
   app.get("/alerts", async (req) => {
     const ctx = await app.authAdmin(req);
     const q = StoreQuery.parse(req.query);
-    const alerts = await loadAlerts(app.db, ctx.tenantId, q.storeId ?? null);
+    const alerts = await loadAlerts(app.db, ctx.tenantId, storeParam(ctx, q.storeId));
     return { alerts, count: alerts.reduce((n, a) => n + (a.severity === "low" ? 0 : a.count), 0) };
   });
 
@@ -69,7 +70,7 @@ export async function ownerRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const q = StoreQuery.parse(req.query);
     await expireApprovals(app.db, ctx.tenantId);
-    const p = [ctx.tenantId, q.storeId ?? null];
+    const p = [ctx.tenantId, storeParam(ctx, q.storeId)];
     const [stores, shifts, pending, latest] = await Promise.all([
       app.db.query(
         `SELECT s.id, s.name, s.code, COALESCE(SUM(o.total), 0)::int AS total,
@@ -77,7 +78,7 @@ export async function ownerRoutes(app: FastifyInstance) {
                 MAX(o.created_at) AS "lastOrderAt"
            FROM stores s LEFT JOIN orders o ON o.store_id = s.id
                 AND (o.created_at AT TIME ZONE s.timezone)::date = (now() AT TIME ZONE s.timezone)::date
-          WHERE s.tenant_id = $1 AND ($2::uuid IS NULL OR s.id = $2) GROUP BY s.id ORDER BY s.code`,
+          WHERE s.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[])) GROUP BY s.id ORDER BY s.code`,
         p,
       ),
       app.db.query(
@@ -88,20 +89,20 @@ export async function ownerRoutes(app: FastifyInstance) {
            JOIN users u ON u.id = se.opened_by
            LEFT JOIN LATERAL (SELECT SUM(o.total) AS total, COUNT(*) FILTER (WHERE o.refund_of_order_id IS NULL) AS orders
                                 FROM orders o WHERE o.session_id = se.id) t ON true
-          WHERE s.tenant_id = $1 AND ($2::uuid IS NULL OR s.id = $2) AND se.state = 'open'
+          WHERE s.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[])) AND se.state = 'open'
           ORDER BY s.code, r.code`,
         p,
       ),
       app.db.query(
         `SELECT COUNT(*)::int AS n FROM approval_requests
-          WHERE tenant_id = $1 AND ($2::uuid IS NULL OR store_id = $2) AND status = 'pending'`,
+          WHERE tenant_id = $1 AND ($2::uuid[] IS NULL OR store_id = ANY($2::uuid[])) AND status = 'pending'`,
         p,
       ),
       app.db.query(
         `SELECT o.id, o.number, o.total, o.created_at AS "createdAt", o.refund_of_order_id IS NOT NULL AS "isRefund",
                 s.name AS "storeName", u.name AS cashier
            FROM orders o JOIN stores s ON s.id = o.store_id JOIN users u ON u.id = o.cashier_id
-          WHERE o.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2)
+          WHERE o.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[]))
           ORDER BY o.created_at DESC LIMIT 10`,
         p,
       ),
@@ -124,9 +125,11 @@ export async function ownerRoutes(app: FastifyInstance) {
     await expireApprovals(app.db, ctx.tenantId);
     const filter = q.status === "pending" ? "AND a.status = 'pending'" : q.status === "decided" ? "AND a.status <> 'pending'" : "";
     const order = q.status === "pending" ? "a.created_at" : "a.created_at DESC";
-    const { rows } = await app.db.query(`${APPROVAL_SELECT} WHERE a.tenant_id = $1 ${filter} ORDER BY ${order} LIMIT ${q.limit}`, [
-      ctx.tenantId,
-    ]);
+    const { rows } = await app.db.query(
+      `${APPROVAL_SELECT} WHERE a.tenant_id = $1 AND ($2::uuid[] IS NULL OR a.store_id = ANY($2::uuid[])) ${filter}
+        ORDER BY ${order} LIMIT ${q.limit}`,
+      [ctx.tenantId, ctx.storeIds],
+    );
     return { approvals: rows };
   });
 
@@ -141,11 +144,15 @@ export async function ownerRoutes(app: FastifyInstance) {
       const status = body.decision === "approve" ? "approved" : "denied";
       const { rows } = await tx.query(
         `UPDATE approval_requests SET status = $3, decided_by = $4, decided_at = now(), decision_note = $5
-          WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > now() RETURNING id`,
-        [id, ctx.tenantId, status, ctx.userId, body.note ?? null],
+          WHERE id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > now()
+            AND ($6::uuid[] IS NULL OR store_id = ANY($6::uuid[])) RETURNING id`,
+        [id, ctx.tenantId, status, ctx.userId, body.note ?? null, ctx.storeIds],
       );
       if (!rows[0]) {
-        const current = await tx.query("SELECT status FROM approval_requests WHERE id = $1 AND tenant_id = $2", [id, ctx.tenantId]);
+        const current = await tx.query(
+          "SELECT status FROM approval_requests WHERE id = $1 AND tenant_id = $2 AND ($3::uuid[] IS NULL OR store_id = ANY($3::uuid[]))",
+          [id, ctx.tenantId, ctx.storeIds],
+        );
         if (!current.rows[0]) throw new HttpError(404, "not_found", "Approval request not found");
         const was = current.rows[0].status as string;
         const why: Record<string, string> = {

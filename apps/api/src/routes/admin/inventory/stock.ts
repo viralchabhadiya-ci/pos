@@ -7,7 +7,7 @@ import { notFound } from "../../../errors.js";
 import { adminAudit } from "../common.js";
 import {
   bad,
-  checkStore,
+  checkMyStore,
   checkSupplier,
   checkVariants,
   checkWhole,
@@ -19,6 +19,7 @@ import {
   Qty,
   writeMove,
 } from "./common.js";
+import { storeParam } from "../../../stores.js";
 
 const StockListSchema = Paging.extend({
   storeId: z.string().uuid().optional(),
@@ -71,15 +72,15 @@ const MOVE_REASONS = ["sale", "refund", "adjust", "receive", "transfer", "count"
 const SALES_DAYS = 28;
 
 const ON_HAND = (store: string) =>
-  `(SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id ${store ? `AND m.store_id = ${store}` : ""})`;
+  `(SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id ${store ? `AND m.store_id = ANY(${store}::uuid[])` : ""})`;
 
-/** Ordered but not yet arrived, for one store or all. */
+/** Ordered but not yet arrived, for some stores (a uuid[] placeholder) or all. */
 const INCOMING = (store: string) => `(
   SELECT COALESCE(SUM(GREATEST(l.qty_ordered - l.qty_received, 0)), 0) FROM purchase_order_lines l
     JOIN purchase_orders po ON po.id = l.po_id
-   WHERE l.variant_id = v.id AND po.status IN ('ordered', 'partial') ${store ? `AND po.store_id = ${store}` : ""})
+   WHERE l.variant_id = v.id AND po.status IN ('ordered', 'partial') ${store ? `AND po.store_id = ANY(${store}::uuid[])` : ""})
  + (SELECT COALESCE(SUM(tl.qty), 0) FROM transfer_lines tl JOIN transfers t ON t.id = tl.transfer_id
-     WHERE tl.variant_id = v.id AND t.status = 'sent' ${store ? `AND t.to_store_id = ${store}` : ""})`;
+     WHERE tl.variant_id = v.id AND t.status = 'sent' ${store ? `AND t.to_store_id = ANY(${store}::uuid[])` : ""})`;
 
 export async function stockRoutes(app: FastifyInstance) {
   /** Product picker for documents: search by name, barcode or SKU, with the store's stock. */
@@ -88,7 +89,7 @@ export async function stockRoutes(app: FastifyInstance) {
     const f = z
       .object({ q: z.string().trim().max(100).default(""), storeId: z.string().uuid().optional(), supplierId: z.string().uuid().optional() })
       .parse(req.query);
-    const params: unknown[] = [ctx.tenantId, f.storeId ?? null, f.supplierId ?? null];
+    const params: unknown[] = [ctx.tenantId, storeParam(ctx, f.storeId), f.supplierId ?? null];
     let filter = "";
     if (f.q) {
       params.push(`%${f.q}%`, f.q);
@@ -97,7 +98,7 @@ export async function stockRoutes(app: FastifyInstance) {
     const { rows } = await app.db.query(
       `SELECT v.id AS "variantId", p.id AS "productId", p.name, p.name_ar AS "nameAr", p.uom, v.barcode, v.sku, v.cost,
               v.track_expiry AS "trackExpiry", si.unit_cost AS "supplierCost", si.supplier_sku AS "supplierSku",
-              (SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id AND ($2::uuid IS NULL OR m.store_id = $2)) AS "onHand"
+              (SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id AND ($2::uuid[] IS NULL OR m.store_id = ANY($2::uuid[]))) AS "onHand"
          FROM variants v JOIN products p ON p.id = v.product_id
          LEFT JOIN supplier_items si ON si.variant_id = v.id AND si.supplier_id = $3
         WHERE v.tenant_id = $1 AND p.active ${filter}
@@ -111,11 +112,10 @@ export async function stockRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const f = StockListSchema.parse(req.query);
     const params: unknown[] = [ctx.tenantId];
-    if (f.storeId) {
-      await checkStore(app.db, ctx.tenantId, f.storeId);
-      params.push(f.storeId);
-    }
-    const store = f.storeId ? "$2" : "";
+    if (f.storeId) await checkMyStore(app.db, ctx, f.storeId);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) params.push(stores);
+    const store = stores ? "$2" : "";
     const where = ["v.tenant_id = $1"];
     if (f.q) {
       params.push(`%${f.q}%`, f.q);
@@ -157,12 +157,13 @@ export async function stockRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const f = z.object({ storeId: z.string().uuid().optional() }).parse(req.query);
     const params: unknown[] = [ctx.tenantId];
-    if (f.storeId) params.push(f.storeId);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) params.push(stores);
     const { rows } = await app.db.query(
       `SELECT p.name, v.barcode, v.sku, c.name AS category, p.uom, x.on_hand, x.incoming, v.cost,
               ROUND(GREATEST(x.on_hand, 0) * COALESCE(v.cost, 0))::bigint AS value, v.reorder_level, v.reorder_qty
          FROM variants v JOIN products p ON p.id = v.product_id LEFT JOIN categories c ON c.id = p.category_id
-         CROSS JOIN LATERAL (SELECT ${ON_HAND(f.storeId ? "$2" : "")} AS on_hand, ${INCOMING(f.storeId ? "$2" : "")} AS incoming) x
+         CROSS JOIN LATERAL (SELECT ${ON_HAND(stores ? "$2" : "")} AS on_hand, ${INCOMING(stores ? "$2" : "")} AS incoming) x
         WHERE v.tenant_id = $1 AND (p.active OR x.on_hand <> 0) ORDER BY p.name`,
       params,
     );
@@ -262,7 +263,8 @@ export async function stockRoutes(app: FastifyInstance) {
     const params: unknown[] = [ctx.tenantId];
     const where = ["m.tenant_id = $1"];
     if (f.variantId) where.push(`m.variant_id = $${params.push(f.variantId)}`);
-    if (f.storeId) where.push(`m.store_id = $${params.push(f.storeId)}`);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) where.push(`m.store_id = ANY($${params.push(stores)}::uuid[])`);
     if (f.reason) where.push(`m.reason = $${params.push(f.reason)}`);
     const sql = `FROM stock_moves m WHERE ${where.join(" AND ")}`;
     const [list, count] = await Promise.all([
@@ -293,7 +295,7 @@ export async function stockRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const b = AdjustSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      await checkStore(tx, ctx.tenantId, b.storeId);
+      await checkMyStore(tx, ctx, b.storeId);
       const variants = await checkVariants(tx, ctx.tenantId, b.lines.map((l) => l.variantId));
       if (b.reason === "waste" && b.lines.some((l) => l.qty < 0)) throw bad("Enter how many were thrown away as a positive number");
       if (b.reason === "waste" && !empty(b.note)) throw bad("Say why the stock is written off, e.g. expired or damaged");
@@ -325,7 +327,7 @@ export async function stockRoutes(app: FastifyInstance) {
   app.get("/inventory/reorder", async (req) => {
     const ctx = await app.authAdmin(req);
     const f = ReorderSchema.parse(req.query);
-    await checkStore(app.db, ctx.tenantId, f.storeId);
+    await checkMyStore(app.db, ctx, f.storeId);
     const { rows } = await app.db.query(
       `SELECT v.id AS "variantId", p.name, p.uom, v.barcode, v.cost, v.reorder_level AS "reorderLevel", v.reorder_qty AS "reorderQty",
               x.on_hand AS "onHand", x.incoming, x.sold,
@@ -333,7 +335,7 @@ export async function stockRoutes(app: FastifyInstance) {
               COALESCE(si.unit_cost, v.cost, 0) AS "unitCost"
          FROM variants v JOIN products p ON p.id = v.product_id
          CROSS JOIN LATERAL (
-           SELECT ${ON_HAND("$2")} AS on_hand, ${INCOMING("$2")} AS incoming,
+           SELECT ${ON_HAND("ARRAY[$2::uuid]")} AS on_hand, ${INCOMING("ARRAY[$2::uuid]")} AS incoming,
                   (SELECT COALESCE(-SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id AND m.store_id = $2
                       AND m.reason IN ('sale', 'refund') AND m.at > now() - interval '${SALES_DAYS} days') AS sold) x
          LEFT JOIN LATERAL (
@@ -383,7 +385,7 @@ export async function stockRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const b = CreatePosSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      await checkStore(tx, ctx.tenantId, b.storeId);
+      await checkMyStore(tx, ctx, b.storeId);
       const variants = await checkVariants(tx, ctx.tenantId, b.lines.map((l) => l.variantId));
       const bySupplier = new Map<string, typeof b.lines>();
       for (const l of b.lines) {
@@ -424,15 +426,16 @@ export async function stockRoutes(app: FastifyInstance) {
     const f = z
       .object({ storeId: z.string().uuid().optional(), days: z.coerce.number().int().min(0).max(365).default(30) })
       .parse(req.query);
+    const stores = storeParam(ctx, f.storeId);
     const params: unknown[] = [ctx.tenantId];
-    if (f.storeId) params.push(f.storeId);
+    if (stores) params.push(stores);
     const { rows } = await app.db.query(
       `SELECT l.id AS "lotId", l.code, l.expires_on::text AS "expiresOn", l.variant_id AS "variantId", p.name, p.uom, v.cost,
               m.store_id AS "storeId", s.name AS "storeName", SUM(m.qty) AS "lotQty", MIN(m.at) AS "receivedAt",
               (SELECT COALESCE(SUM(a.qty), 0) FROM stock_moves a WHERE a.variant_id = l.variant_id AND a.store_id = m.store_id) AS "storeOnHand"
          FROM lots l JOIN stock_moves m ON m.lot_id = l.id JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id
          JOIN stores s ON s.id = m.store_id
-        WHERE l.tenant_id = $1 AND l.expires_on IS NOT NULL ${f.storeId ? "AND m.store_id = $2" : ""}
+        WHERE l.tenant_id = $1 AND l.expires_on IS NOT NULL ${stores ? "AND m.store_id = ANY($2::uuid[])" : ""}
         GROUP BY l.id, p.id, v.id, m.store_id, s.id`,
       params,
     );

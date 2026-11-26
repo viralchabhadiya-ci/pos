@@ -41,6 +41,8 @@ export async function dailyRecipients(db: Db, tenantId: string): Promise<string[
     `SELECT lower(u.email) AS email FROM users u LEFT JOIN report_subscriptions r ON r.user_id = u.id
       WHERE u.tenant_id = $1 AND u.active AND u.role IN ('owner', 'manager') AND u.email IS NOT NULL
         AND COALESCE(r.daily, u.role = 'owner')
+        -- The summary covers the whole business, so store managers do not get it.
+        AND (u.role = 'owner' OR NOT EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id))
      UNION
      SELECT lower(e) FROM report_settings s, unnest(s.extra_emails) e WHERE s.tenant_id = $1
      ORDER BY 1`,

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AdminContext } from "../../app.js";
 import { money, toCsv } from "../../csv.js";
 import { HttpError } from "../../errors.js";
+import { storeParam } from "../../stores.js";
 
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-01-31");
 
@@ -26,8 +27,8 @@ function range(q: z.infer<typeof RangeSchema>) {
   if (days > MAX_DAYS) throw new HttpError(400, "bad_request", `Pick at most ${MAX_DAYS} days`);
 }
 
-/** Orders in the range, by each store's own calendar day. $1 tenant, $2 store or null, $3 from, $4 to. */
-const SCOPE = `o.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2)
+/** Orders in the range, by each store's own calendar day. $1 tenant, $2 stores or null, $3 from, $4 to. */
+const SCOPE = `o.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[]))
   AND (o.created_at AT TIME ZONE s.timezone)::date BETWEEN $3::date AND $4::date`;
 
 interface Column {
@@ -127,7 +128,7 @@ function sendCsv(reply: FastifyReply, filename: string, columns: Column[], rows:
     .send(csv);
 }
 
-const params = (ctx: AdminContext, q: z.infer<typeof RangeSchema>) => [ctx.tenantId, q.storeId ?? null, q.from, q.to];
+const params = (ctx: AdminContext, q: z.infer<typeof RangeSchema>) => [ctx.tenantId, storeParam(ctx, q.storeId), q.from, q.to];
 
 export async function adminReportRoutes(app: FastifyInstance) {
   app.get("/reports/sales", async (req, reply) => {
