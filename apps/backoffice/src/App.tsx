@@ -24,26 +24,29 @@ import { Settings } from "./pages/Settings.js";
 import { Staff } from "./pages/Staff.js";
 import { Inventory } from "./pages/inventory/Inventory.js";
 import { Labels } from "./pages/Labels.js";
+import { Stores } from "./pages/Stores.js";
 import { Developers } from "./pages/Developers.js";
 
-const NAV: { path: string; label: string; icon: IconName }[] = [
+/** hq: head office only. A store manager (limited to some stores) does not see these. */
+const NAV: { path: string; label: string; icon: IconName; hq?: boolean; multi?: boolean }[] = [
   { path: "dashboard", label: "Dashboard", icon: "dashboard" },
+  { path: "stores", label: "Stores", icon: "store", multi: true },
   { path: "sales", label: "Sales", icon: "receipt" },
   { path: "reports", label: "Reports", icon: "chart" },
-  { path: "accounting", label: "Accounting", icon: "book" },
-  { path: "einvoicing", label: "E-invoicing", icon: "send" },
+  { path: "accounting", label: "Accounting", icon: "book", hq: true },
+  { path: "einvoicing", label: "E-invoicing", icon: "send", hq: true },
   { path: "products", label: "Products", icon: "box" },
   { path: "inventory", label: "Inventory", icon: "stock" },
-  { path: "categories", label: "Categories", icon: "tag" },
-  { path: "promotions", label: "Promotions", icon: "percent" },
-  { path: "price-lists", label: "Price lists", icon: "list" },
+  { path: "categories", label: "Categories", icon: "tag", hq: true },
+  { path: "promotions", label: "Promotions", icon: "percent", hq: true },
+  { path: "price-lists", label: "Price lists", icon: "list", hq: true },
   { path: "labels", label: "Scales & labels", icon: "printer" },
-  { path: "loyalty", label: "Loyalty & gift cards", icon: "gift" },
+  { path: "loyalty", label: "Loyalty & gift cards", icon: "gift", hq: true },
   { path: "customers", label: "Customers", icon: "user" },
   { path: "staff", label: "Staff", icon: "users" },
   { path: "devices", label: "Tills & devices", icon: "monitor" },
-  { path: "audit", label: "Audit log", icon: "history" },
-  { path: "developers", label: "Developers", icon: "key" },
+  { path: "audit", label: "Audit log", icon: "history", hq: true },
+  { path: "developers", label: "Developers", icon: "key", hq: true },
   { path: "settings", label: "Settings", icon: "settings" },
 ];
 
@@ -146,8 +149,10 @@ export function App() {
         return <Staff me={me} />;
       case "devices":
         return <Devices me={me} />;
+      case "stores":
+        return <Stores me={me} tab={route[1]} />;
       default:
-        return <Dashboard me={me} />;
+        return <Dashboard key={route[1] ?? ""} me={me} storeId={page === "dashboard" ? route[1] : undefined} />;
     }
   })();
 
@@ -181,7 +186,7 @@ export function App() {
           </span>
         </div>
         <ul>
-          {NAV.map((n) => (
+          {NAV.filter((n) => (!n.hq || me.user.storeIds === null) && (!n.multi || me.stores.length > 1)).map((n) => (
             <li key={n.path}>
               <a href={`#/${n.path}`} aria-current={page === n.path || (page === "" && n.path === "dashboard") ? "page" : undefined}>
                 <Icon name={n.icon} />
@@ -193,7 +198,13 @@ export function App() {
         <div className="side-foot">
           <div className="who">
             <strong>{me.user.name}</strong>
-            <span className="muted small">{me.user.role === "owner" ? "Owner" : "Manager"}</span>
+            <span className="muted small">
+              {me.user.role === "owner"
+                ? "Owner"
+                : me.user.storeIds
+                  ? `Store manager · ${me.stores.length === 1 ? me.stores[0]!.name : `${me.stores.length} stores`}`
+                  : "Manager"}
+            </span>
           </div>
           <button type="button" className="btn ghost block-left" onClick={signOut}>
             <Icon name="logout" /> Sign out

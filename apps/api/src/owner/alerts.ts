@@ -43,28 +43,28 @@ const fmt = (fils: number) => (fils / 100).toFixed(2);
  * Everything an owner should look at now, most urgent first. Each check is a cheap count with
  * a few example lines, so the owner app can poll it.
  */
-export async function loadAlerts(db: Db, tenantId: string, storeId: string | null = null): Promise<Alert[]> {
+export async function loadAlerts(db: Db, tenantId: string, storeIds: string[] | null = null): Promise<Alert[]> {
   await expireApprovals(db, tenantId);
-  const p = [tenantId, storeId];
+  const p = [tenantId, storeIds];
   const [approvals, cards, einv, cash, offline, mismatch, stock, report] = await Promise.all([
     db.query(
       `SELECT a.id, a.summary, a.amount, a.created_at, r.name AS register, u.name AS requester, COUNT(*) OVER ()::int AS n
          FROM approval_requests a JOIN registers r ON r.id = a.register_id LEFT JOIN users u ON u.id = a.requested_by
-        WHERE a.tenant_id = $1 AND ($2::uuid IS NULL OR a.store_id = $2) AND a.status = 'pending'
+        WHERE a.tenant_id = $1 AND ($2::uuid[] IS NULL OR a.store_id = ANY($2::uuid[])) AND a.status = 'pending'
         ORDER BY a.created_at LIMIT ${ITEMS}`,
       p,
     ),
     db.query(
       `SELECT c.id, c.kind, c.amount, c.status, r.name AS register, COUNT(*) OVER ()::int AS n
          FROM card_transactions c JOIN registers r ON r.id = c.register_id
-        WHERE c.tenant_id = $1 AND ($2::uuid IS NULL OR r.store_id = $2) AND ${CARD_PROBLEM_SQL}
+        WHERE c.tenant_id = $1 AND ($2::uuid[] IS NULL OR r.store_id = ANY($2::uuid[])) AND ${CARD_PROBLEM_SQL}
         ORDER BY c.created_at DESC LIMIT ${ITEMS}`,
       p,
     ),
     db.query(
       `SELECT e.id, e.status, e.last_error, o.id AS order_id, o.number, COUNT(*) OVER ()::int AS n
          FROM einvoices e JOIN orders o ON o.id = e.order_id
-        WHERE e.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2) AND e.status IN ('failed', 'rejected')
+        WHERE e.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[])) AND e.status IN ('failed', 'rejected')
         ORDER BY e.updated_at DESC LIMIT ${ITEMS}`,
       p,
     ),
@@ -73,7 +73,7 @@ export async function loadAlerts(db: Db, tenantId: string, storeId: string | nul
               (se.closing_cash_counted - se.expected_cash)::int AS diff, COUNT(*) OVER ()::int AS n
          FROM sessions se JOIN registers r ON r.id = se.register_id JOIN stores s ON s.id = r.store_id
          LEFT JOIN users u ON u.id = se.closed_by
-        WHERE s.tenant_id = $1 AND ($2::uuid IS NULL OR s.id = $2) AND se.state = 'closed'
+        WHERE s.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[])) AND se.state = 'closed'
           AND se.closed_at > now() - interval '${RECENT_DAYS} days'
           AND abs(se.closing_cash_counted - se.expected_cash) >= ${CASH_VARIANCE_FILS}
         ORDER BY abs(se.closing_cash_counted - se.expected_cash) DESC LIMIT ${ITEMS}`,
@@ -82,7 +82,7 @@ export async function loadAlerts(db: Db, tenantId: string, storeId: string | nul
     db.query(
       `SELECT d.id, d.name, r.name AS register, d.last_seen_at, COUNT(*) OVER ()::int AS n
          FROM devices d JOIN registers r ON r.id = d.register_id JOIN stores s ON s.id = r.store_id
-        WHERE s.tenant_id = $1 AND ($2::uuid IS NULL OR s.id = $2) AND d.role = 'till' AND d.revoked_at IS NULL
+        WHERE s.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[])) AND d.role = 'till' AND d.revoked_at IS NULL
           AND EXISTS (SELECT 1 FROM sessions se WHERE se.register_id = r.id AND se.state = 'open')
           AND (d.last_seen_at IS NULL OR d.last_seen_at < now() - interval '${OFFLINE_MINUTES} minutes')
         ORDER BY d.last_seen_at NULLS FIRST LIMIT ${ITEMS}`,
@@ -91,7 +91,7 @@ export async function loadAlerts(db: Db, tenantId: string, storeId: string | nul
     db.query(
       `SELECT o.id, o.number, (o.client_total - o.total)::int AS diff, COUNT(*) OVER ()::int AS n
          FROM orders o
-        WHERE o.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2) AND o.totals_mismatch
+        WHERE o.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[])) AND o.totals_mismatch
           AND o.created_at > now() - interval '${RECENT_DAYS} days'
         ORDER BY o.created_at DESC LIMIT ${ITEMS}`,
       p,
@@ -100,7 +100,7 @@ export async function loadAlerts(db: Db, tenantId: string, storeId: string | nul
       `SELECT p.id, p.name, v.reorder_level AS "reorderLevel", oh.qty AS "onHand", COUNT(*) OVER ()::int AS n
          FROM products p JOIN variants v ON v.product_id = p.id
          JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m
-                        WHERE m.variant_id = v.id AND ($2::uuid IS NULL OR m.store_id = $2)) oh ON true
+                        WHERE m.variant_id = v.id AND ($2::uuid[] IS NULL OR m.store_id = ANY($2::uuid[]))) oh ON true
         WHERE p.tenant_id = $1 AND p.active AND v.reorder_level IS NOT NULL AND oh.qty <= v.reorder_level
         ORDER BY oh.qty - v.reorder_level, p.name LIMIT ${ITEMS}`,
       p,

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AdminContext } from "../../../app.js";
 import { withTx, type Tx } from "../../../db.js";
 import { adminAudit } from "../common.js";
-import { bad, checkStore, checkVariants, checkWhole, empty, mustFind, nextNumber, Paging, writeMove, wrongState } from "./common.js";
+import { bad, checkMyStore, checkVariants, checkWhole, empty, mustFind, nextNumber, Paging, writeMove, wrongState } from "./common.js";
 
 const CreateSchema = z.object({
   storeId: z.string().uuid(),
@@ -39,11 +39,12 @@ interface CountRow {
   storeId: string;
 }
 
-const lock = (tx: Tx, ctx: Pick<AdminContext, "tenantId">, id: string) =>
+const lock = (tx: Tx, ctx: Pick<AdminContext, "tenantId" | "storeIds">, id: string) =>
   mustFind<CountRow>(
     tx,
-    `SELECT id, number, status, store_id AS "storeId" FROM stock_counts WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-    [id, ctx.tenantId],
+    `SELECT id, number, status, store_id AS "storeId" FROM stock_counts
+      WHERE id = $1 AND tenant_id = $2 AND ($3::uuid[] IS NULL OR store_id = ANY($3::uuid[])) FOR UPDATE`,
+    [id, ctx.tenantId, ctx.storeIds],
     "Stock count",
   );
 
@@ -58,7 +59,7 @@ export const CountLinesSchema = LinesSchema;
  * the sheet (e.g. found on the shelf but switched off) is added. Used by the back office and by
  * the staff app.
  */
-export async function saveCountLines(tx: Tx, ctx: Pick<AdminContext, "tenantId">, countId: string, lines: z.infer<typeof LinesSchema>["lines"]) {
+export async function saveCountLines(tx: Tx, ctx: Pick<AdminContext, "tenantId" | "storeIds">, countId: string, lines: z.infer<typeof LinesSchema>["lines"]) {
   const c = await lock(tx, ctx, countId);
   if (c.status !== "open") throw wrongState(`${c.number} is ${c.status}`);
   const variants = await checkVariants(tx, ctx.tenantId, lines.map((l) => l.variantId));
@@ -79,8 +80,8 @@ export async function countRoutes(app: FastifyInstance) {
   app.get("/stock-counts", async (req) => {
     const ctx = await app.authAdmin(req);
     const f = Paging.extend({ status: z.enum(["open", "completed", "cancelled", "all"]).default("all") }).parse(req.query);
-    const params: unknown[] = [ctx.tenantId];
-    const where = ["c.tenant_id = $1"];
+    const params: unknown[] = [ctx.tenantId, ctx.storeIds];
+    const where = ["c.tenant_id = $1", "($2::uuid[] IS NULL OR c.store_id = ANY($2::uuid[]))"];
     if (f.status !== "all") where.push(`c.status = $${params.push(f.status)}`);
     const sql = `FROM stock_counts c WHERE ${where.join(" AND ")}`;
     const [list, count] = await Promise.all([
@@ -107,8 +108,8 @@ export async function countRoutes(app: FastifyInstance) {
               du.name AS "completedBy"
          FROM stock_counts c JOIN stores s ON s.id = c.store_id LEFT JOIN categories cat ON cat.id = c.category_id
          LEFT JOIN users cu ON cu.id = c.created_by LEFT JOIN users du ON du.id = c.completed_by
-        WHERE c.id = $1 AND c.tenant_id = $2`,
-      [req.params.id, ctx.tenantId],
+        WHERE c.id = $1 AND c.tenant_id = $2 AND ($3::uuid[] IS NULL OR c.store_id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
       "Stock count",
     );
     const lines = await app.db.query(
@@ -128,7 +129,7 @@ export async function countRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const b = CreateSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      const store = await checkStore(tx, ctx.tenantId, b.storeId);
+      const store = await checkMyStore(tx, ctx, b.storeId);
       let catName: string | null = null;
       if (b.categoryId) {
         const { rows } = await tx.query("SELECT name FROM categories WHERE id = $1 AND tenant_id = $2", [b.categoryId, ctx.tenantId]);

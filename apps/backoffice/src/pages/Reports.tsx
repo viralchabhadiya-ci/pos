@@ -80,10 +80,13 @@ const KIND_LABEL: Record<VatRow["kind"], string> = {
 };
 
 export function Reports({ me }: { me: Me }) {
+  // Scheduled emails cover the whole business, so they are head office's.
+  const tabs = TABS.filter((t) => t.id !== "scheduled" || me.user.storeIds === null);
   const [tab, setTab] = useState<Tab>("product");
   const [range, setRange] = useState(() => presets()[2]!);
+  const [storeId, setStoreId] = useState("");
   const toast = useToast();
-  const q = `from=${range.from}&to=${range.to}`;
+  const q = `from=${range.from}&to=${range.to}${storeId ? `&storeId=${storeId}` : ""}`;
 
   const report = useLoad<SalesReport | VatReport | null>(
     () =>
@@ -135,6 +138,19 @@ export function Reports({ me }: { me: Me }) {
           <span>To</span>
           <input type="date" value={range.to} min={range.from} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value, label: "" })} />
         </label>
+        {me.stores.length > 1 && (
+          <label className="inline-label">
+            <span>Store</span>
+            <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
+              <option value="">All stores</option>
+              {me.stores.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div
@@ -144,13 +160,13 @@ export function Reports({ me }: { me: Me }) {
         onKeyDown={(e) => {
           // Arrow keys move between tabs, as screen reader users expect.
           if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-          const i = TABS.findIndex((t) => t.id === tab);
-          const next = TABS[(i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]!;
+          const i = tabs.findIndex((t) => t.id === tab);
+          const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]!;
           setTab(next.id);
           document.getElementById(`tab-${next.id}`)?.focus();
         }}
       >
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"

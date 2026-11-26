@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AdminContext } from "../../app.js";
 import { notFound } from "../../errors.js";
+import { storeParam } from "../../stores.js";
 
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-01-31");
 
@@ -18,12 +19,12 @@ const ListSchema = z.object({
 const DashboardSchema = z.object({ date: Day.optional(), storeId: z.string().uuid().optional() });
 
 /** Today's date in a store's timezone, so "today" means the shop's day, not the server's. */
-async function storeToday(app: FastifyInstance, ctx: AdminContext, storeId?: string): Promise<string> {
+async function storeToday(app: FastifyInstance, ctx: AdminContext, stores: string[] | null): Promise<string> {
   const { rows } = await app.db.query(
     `SELECT to_char(now() AT TIME ZONE COALESCE(
-              (SELECT timezone FROM stores WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2) ORDER BY code LIMIT 1),
+              (SELECT timezone FROM stores WHERE tenant_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[])) ORDER BY code LIMIT 1),
               'Asia/Dubai'), 'YYYY-MM-DD') AS d`,
-    [ctx.tenantId, storeId ?? null],
+    [ctx.tenantId, stores],
   );
   return rows[0].d;
 }
@@ -38,7 +39,8 @@ export async function salesRoutes(app: FastifyInstance) {
       params.push(value);
       where.push(sql.replaceAll("$?", `$${params.length}`));
     };
-    if (f.storeId) add("o.store_id = $?", f.storeId);
+    const stores = storeParam(ctx, f.storeId);
+    if (stores) add("o.store_id = ANY($?::uuid[])", stores);
     if (f.from) add("(o.created_at AT TIME ZONE s.timezone)::date >= $?::date", f.from);
     if (f.to) add("(o.created_at AT TIME ZONE s.timezone)::date <= $?::date", f.to);
     if (f.q) add("o.number ILIKE $?", `%${f.q}%`);
@@ -78,8 +80,8 @@ export async function salesRoutes(app: FastifyInstance) {
          JOIN users u ON u.id = o.cashier_id
          LEFT JOIN customers c ON c.id = o.customer_id
          LEFT JOIN orders ro ON ro.id = o.refund_of_order_id
-        WHERE o.id = $1 AND o.tenant_id = $2`,
-      [req.params.id, ctx.tenantId],
+        WHERE o.id = $1 AND o.tenant_id = $2 AND ($3::uuid[] IS NULL OR o.store_id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
     );
     const order = rows[0];
     if (!order) throw notFound("Bill");
@@ -111,9 +113,10 @@ export async function salesRoutes(app: FastifyInstance) {
   app.get("/dashboard", async (req) => {
     const ctx = await app.authAdmin(req);
     const q = DashboardSchema.parse(req.query);
-    const date = q.date ?? (await storeToday(app, ctx, q.storeId));
-    const params = [ctx.tenantId, q.storeId ?? null, date];
-    const scope = "o.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2)";
+    const stores = storeParam(ctx, q.storeId);
+    const date = q.date ?? (await storeToday(app, ctx, stores));
+    const params = [ctx.tenantId, stores, date];
+    const scope = "o.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[]))";
     const local = "(o.created_at AT TIME ZONE s.timezone)";
     const day = `${scope} AND ${local}::date = $3::date`;
     const base = "FROM orders o JOIN stores s ON s.id = o.store_id";
@@ -167,10 +170,10 @@ export async function salesRoutes(app: FastifyInstance) {
         `SELECT p.id, p.name, v.reorder_level AS "reorderLevel", oh.qty AS "onHand", COUNT(*) OVER ()::int AS total
            FROM products p JOIN variants v ON v.product_id = p.id
            JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m
-                          WHERE m.variant_id = v.id AND ($2::uuid IS NULL OR m.store_id = $2)) oh ON true
+                          WHERE m.variant_id = v.id AND ($2::uuid[] IS NULL OR m.store_id = ANY($2::uuid[]))) oh ON true
           WHERE p.tenant_id = $1 AND p.active AND v.reorder_level IS NOT NULL AND oh.qty <= v.reorder_level
           ORDER BY oh.qty - v.reorder_level, p.name LIMIT 5`,
-        [ctx.tenantId, q.storeId ?? null],
+        [ctx.tenantId, stores],
       ),
     ]);
     const t = totals.rows[0];

@@ -15,8 +15,12 @@ import { StatusBadge, StoreSelect } from "./Inventory.js";
 
 const PAGE = 50;
 
+/** Stores a transfer can come from or go to: one end must be the user's own store. */
+const partners = (me: Me) => me.transferStores ?? me.stores;
+const mine = (me: Me, storeId: string) => me.stores.some((s) => s.id === storeId);
+
 export function Transfers({ me, id }: { me: Me; id?: string }) {
-  if (me.stores.length < 2 && !id) {
+  if (partners(me).length < 2 && !id) {
     return (
       <EmptyState icon="arrows" title="Transfers need two stores">
         <p className="muted">Add another store in Settings, then move stock between them here.</p>
@@ -128,8 +132,9 @@ interface Line {
 
 function TransferEditor({ me, t, onDone }: { me: Me; t?: TransferDetail; onDone?: () => void }) {
   const toast = useToast();
+  const all = partners(me);
   const [from, setFrom] = useState(t?.fromStoreId ?? me.stores[0]?.id ?? "");
-  const [to, setTo] = useState(t?.toStoreId ?? me.stores[1]?.id ?? "");
+  const [to, setTo] = useState(t?.toStoreId ?? all.find((s) => s.id !== (me.stores[0]?.id ?? ""))?.id ?? "");
   const [notes, setNotes] = useState(t?.notes ?? "");
   const [lines, setLines] = useState<Line[]>(t?.lines.map((l) => ({ variantId: l.variantId, name: l.name, uom: l.uom, onHand: l.fromOnHand, qty: String(l.qty) })) ?? []);
   const [error, setError] = useState<string | null>(null);
@@ -139,6 +144,7 @@ function TransferEditor({ me, t, onDone }: { me: Me; t?: TransferDetail; onDone?
     e.preventDefault();
     setError(null);
     if (from === to) return setError("Pick two different stores.");
+    if (!mine(me, from) && !mine(me, to)) return setError("One of the two stores must be yours.");
     if (!lines.length) return setError("Add at least one product.");
     const body = [];
     for (const l of lines) {
@@ -181,7 +187,7 @@ function TransferEditor({ me, t, onDone }: { me: Me; t?: TransferDetail; onDone?
             <Field label="From">
               {(p) => (
                 <select {...p} value={from} onChange={(e) => (setFrom(e.target.value), setLines([]))}>
-                  {me.stores.map((s) => (
+                  {all.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>
@@ -192,7 +198,7 @@ function TransferEditor({ me, t, onDone }: { me: Me; t?: TransferDetail; onDone?
             <Field label="To">
               {(p) => (
                 <select {...p} value={to} onChange={(e) => setTo(e.target.value)}>
-                  {me.stores.map((s) => (
+                  {all.map((s) => (
                     <option key={s.id} value={s.id} disabled={s.id === from}>
                       {s.name}
                     </option>
@@ -260,13 +266,15 @@ function TransferEditor({ me, t, onDone }: { me: Me; t?: TransferDetail; onDone?
           <button type="button" className="btn" onClick={() => (onDone ? onDone() : go("inventory/transfers"))}>
             Cancel
           </button>
-          <button type="submit" className="btn" disabled={busy}>
-            Save draft
+          <button type="submit" className={mine(me, from) ? "btn" : "btn primary"} disabled={busy}>
+            {mine(me, from) ? "Save draft" : `Ask ${all.find((x) => x.id === from)?.name ?? "the store"} for this stock`}
           </button>
+          {mine(me, from) && (
           <button type="button" className="btn primary" disabled={busy} onClick={(e) => void save(e, true)}>
             {busy && <span className="spinner" aria-hidden="true" />}
             Save and send
           </button>
+          )}
         </div>
       </form>
     </div>
@@ -319,15 +327,21 @@ function TransferView({ me, id }: { me: Me; id: string }) {
       <div className="head-actions no-print" style={{ marginBottom: "var(--space-4)" }}>
         {t.status === "draft" && (
           <>
-            <button type="button" className="btn primary" onClick={() => setConfirm("send")}>
-              <Icon name="send" /> Send
-            </button>
+            {mine(me, t.fromStoreId) ? (
+              <button type="button" className="btn primary" onClick={() => setConfirm("send")}>
+                <Icon name="send" /> Send
+              </button>
+            ) : (
+              <span className="notice">
+                <Icon name="history" /> Waiting for {t.fromStoreName} to send it
+              </span>
+            )}
             <button type="button" className="btn" onClick={() => setEditing(true)}>
               <Icon name="edit" /> Edit
             </button>
           </>
         )}
-        {t.status === "sent" && (
+        {t.status === "sent" && mine(me, t.toStoreId) && (
           <button type="button" className="btn primary" onClick={() => setReceiving(true)}>
             <Icon name="truck" /> Receive at {t.toStoreName}
           </button>
@@ -335,7 +349,7 @@ function TransferView({ me, id }: { me: Me; id: string }) {
         <button type="button" className="btn" onClick={() => window.print()}>
           <Icon name="printer" /> Print
         </button>
-        {(t.status === "draft" || t.status === "sent") && (
+        {(t.status === "draft" || (t.status === "sent" && mine(me, t.fromStoreId))) && (
           <button type="button" className="btn ghost" onClick={() => setConfirm("cancel")}>
             Cancel transfer
           </button>

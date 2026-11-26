@@ -4,6 +4,7 @@ import { z } from "zod";
 import { HttpError, notFound } from "../../errors.js";
 import { createPairingCode } from "../../seed.js";
 import { planUsage } from "../../tenants.js";
+import { assertStore } from "../../stores.js";
 import { adminAudit, isUniqueViolation } from "./common.js";
 
 const RegisterSchema = z.object({
@@ -37,8 +38,8 @@ export async function deviceRoutes(app: FastifyInstance) {
                        ORDER BY d.paired_at)
                   FROM devices d WHERE d.register_id = r.id AND d.revoked_at IS NULL), '[]') AS devices
          FROM registers r JOIN stores s ON s.id = r.store_id
-        WHERE s.tenant_id = $1 ORDER BY s.code, r.code`,
-      [ctx.tenantId, ONLINE_MINUTES],
+        WHERE s.tenant_id = $1 AND ($3::uuid[] IS NULL OR s.id = ANY($3::uuid[])) ORDER BY s.code, r.code`,
+      [ctx.tenantId, ONLINE_MINUTES, ctx.storeIds],
     );
     return { registers: rows };
   });
@@ -46,6 +47,7 @@ export async function deviceRoutes(app: FastifyInstance) {
   app.post("/registers", async (req) => {
     const ctx = await app.authAdmin(req);
     const body = RegisterSchema.parse(req.body);
+    assertStore(ctx, body.storeId);
     const store = await app.db.query("SELECT 1 FROM stores WHERE id = $1 AND tenant_id = $2", [body.storeId, ctx.tenantId]);
     if (!store.rowCount) throw notFound("Store");
     const usage = await planUsage(app.db, ctx.tenantId);
@@ -77,8 +79,9 @@ export async function deviceRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const { role } = PairingSchema.parse(req.body ?? {});
     const reg = await app.db.query(
-      "SELECT 1 FROM registers r JOIN stores s ON s.id = r.store_id WHERE r.id = $1 AND s.tenant_id = $2",
-      [req.params.id, ctx.tenantId],
+      `SELECT 1 FROM registers r JOIN stores s ON s.id = r.store_id
+        WHERE r.id = $1 AND s.tenant_id = $2 AND ($3::uuid[] IS NULL OR s.id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
     );
     if (!reg.rowCount) throw notFound("Register");
     const code = await createPairingCode(app.db, req.params.id, role);
@@ -94,8 +97,9 @@ export async function deviceRoutes(app: FastifyInstance) {
       `UPDATE devices d SET revoked_at = now()
          FROM registers r JOIN stores s ON s.id = r.store_id
         WHERE d.id = $1 AND d.register_id = r.id AND s.tenant_id = $2 AND d.revoked_at IS NULL
+          AND ($3::uuid[] IS NULL OR s.id = ANY($3::uuid[]))
         RETURNING d.name`,
-      [req.params.id, ctx.tenantId],
+      [req.params.id, ctx.tenantId, ctx.storeIds],
     );
     if (!res.rowCount) throw notFound("Device");
     await adminAudit(app.db, ctx, "device.revoke", "device", req.params.id, { name: res.rows[0].name });

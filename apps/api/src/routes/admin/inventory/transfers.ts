@@ -3,7 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AdminContext } from "../../../app.js";
 import { withTx, type Tx } from "../../../db.js";
-import { adminAudit } from "../common.js";
+import { adminAudit, forbidden } from "../common.js";
+import { assertStore, canSeeStore } from "../../../stores.js";
 import { bad, checkStore, checkVariants, checkWhole, empty, lockVariants, mustFind, nextNumber, Paging, Qty, writeMove, wrongState } from "./common.js";
 
 const TransferSchema = z.object({
@@ -30,8 +31,9 @@ const lock = (tx: Tx, ctx: AdminContext, id: string) =>
   mustFind<TransferRow>(
     tx,
     `SELECT id, number, status, from_store_id AS "fromStoreId", to_store_id AS "toStoreId" FROM transfers
-      WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
-    [id, ctx.tenantId],
+      WHERE id = $1 AND tenant_id = $2
+        AND ($3::uuid[] IS NULL OR from_store_id = ANY($3::uuid[]) OR to_store_id = ANY($3::uuid[])) FOR UPDATE`,
+    [id, ctx.tenantId, ctx.storeIds],
     "Transfer",
   );
 
@@ -50,8 +52,15 @@ async function writeLines(tx: Tx, ctx: AdminContext, id: string, lines: z.infer<
   }
 }
 
+/**
+ * A store manager can send stock from their store, or ask another store for stock (a draft
+ * the other store sends). Sending needs the sending store, receiving the receiving one.
+ */
 async function checkStores(tx: Tx, ctx: AdminContext, b: { fromStoreId: string; toStoreId: string }) {
   if (b.fromStoreId === b.toStoreId) throw bad("Pick two different stores");
+  if (!canSeeStore(ctx, b.fromStoreId) && !canSeeStore(ctx, b.toStoreId)) {
+    throw forbidden("One of the two stores must be yours");
+  }
   await checkStore(tx, ctx.tenantId, b.fromStoreId);
   await checkStore(tx, ctx.tenantId, b.toStoreId);
 }
@@ -63,10 +72,11 @@ export async function transferRoutes(app: FastifyInstance) {
       status: z.enum(["draft", "sent", "received", "cancelled", "open", "all"]).default("all"),
       storeId: z.string().uuid().optional(),
     }).parse(req.query);
-    const params: unknown[] = [ctx.tenantId];
-    const where = ["t.tenant_id = $1"];
+    const params: unknown[] = [ctx.tenantId, ctx.storeIds];
+    const where = ["t.tenant_id = $1", "($2::uuid[] IS NULL OR t.from_store_id = ANY($2::uuid[]) OR t.to_store_id = ANY($2::uuid[]))"];
     if (f.status === "open") where.push("t.status IN ('draft', 'sent')");
     else if (f.status !== "all") where.push(`t.status = $${params.push(f.status)}`);
+    if (f.storeId) assertStore(ctx, f.storeId);
     if (f.storeId) where.push(`(t.from_store_id = $${params.push(f.storeId)} OR t.to_store_id = $${params.length})`);
     const sql = `FROM transfers t WHERE ${where.join(" AND ")}`;
     const [list, count] = await Promise.all([
@@ -93,8 +103,9 @@ export async function transferRoutes(app: FastifyInstance) {
               su.name AS "sentBy", t.received_at AS "receivedAt", ru.name AS "receivedBy"
          FROM transfers t JOIN stores fs ON fs.id = t.from_store_id JOIN stores ts ON ts.id = t.to_store_id
          LEFT JOIN users cu ON cu.id = t.created_by LEFT JOIN users su ON su.id = t.sent_by LEFT JOIN users ru ON ru.id = t.received_by
-        WHERE t.id = $1 AND t.tenant_id = $2`,
-      [req.params.id, ctx.tenantId],
+        WHERE t.id = $1 AND t.tenant_id = $2
+          AND ($3::uuid[] IS NULL OR t.from_store_id = ANY($3::uuid[]) OR t.to_store_id = ANY($3::uuid[]))`,
+      [req.params.id, ctx.tenantId, ctx.storeIds],
       "Transfer",
     );
     const lines = await app.db.query(
@@ -149,6 +160,7 @@ export async function transferRoutes(app: FastifyInstance) {
     return withTx(app.db, async (tx) => {
       const t = await lock(tx, ctx, req.params.id);
       if (t.status !== "draft") throw wrongState(`${t.number} is already ${t.status}`);
+      if (!canSeeStore(ctx, t.fromStoreId)) throw forbidden("Only the sending store can send this transfer");
       const { rows: lines } = await tx.query(`SELECT variant_id AS "variantId", qty FROM transfer_lines WHERE transfer_id = $1`, [t.id]);
       await lockVariants(tx, lines.map((l) => l.variantId));
       for (const l of lines) {
@@ -167,6 +179,7 @@ export async function transferRoutes(app: FastifyInstance) {
     return withTx(app.db, async (tx) => {
       const t = await lock(tx, ctx, req.params.id);
       if (t.status !== "sent") throw wrongState(t.status === "draft" ? `Send ${t.number} first` : `${t.number} is already ${t.status}`);
+      if (!canSeeStore(ctx, t.toStoreId)) throw forbidden("Only the receiving store can receive this transfer");
       const { rows: lines } = await tx.query(
         `SELECT l.id, l.variant_id AS "variantId", l.qty, p.name, p.uom FROM transfer_lines l
            JOIN variants v ON v.id = l.variant_id JOIN products p ON p.id = v.product_id WHERE l.transfer_id = $1`,
@@ -197,6 +210,7 @@ export async function transferRoutes(app: FastifyInstance) {
     return withTx(app.db, async (tx) => {
       const t = await lock(tx, ctx, req.params.id);
       if (t.status !== "draft" && t.status !== "sent") throw wrongState(`${t.number} is already ${t.status}`);
+      if (t.status === "sent" && !canSeeStore(ctx, t.fromStoreId)) throw forbidden("Only the sending store can call back a sent transfer");
       if (t.status === "sent") {
         const { rows } = await tx.query(`SELECT variant_id AS "variantId", qty FROM transfer_lines WHERE transfer_id = $1`, [t.id]);
         for (const l of rows) {

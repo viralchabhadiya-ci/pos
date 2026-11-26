@@ -20,13 +20,28 @@ export async function syncRoutes(app: FastifyInstance) {
            FROM taxes WHERE tenant_id = $1 AND updated_at > $2`),
       q(`SELECT id, parent_id AS "parentId", name, name_ar AS "nameAr", sort, active
            FROM categories WHERE tenant_id = $1 AND updated_at > $2`),
-      q(`SELECT id, category_id AS "categoryId", name, name_ar AS "nameAr", uom, tax_id AS "taxId", active
-           FROM products WHERE tenant_id = $1 AND updated_at > $2`),
+      // A product the store leaves out of its range goes out as switched off.
+      app.db
+        .query(
+          `SELECT p.id, p.category_id AS "categoryId", p.name, p.name_ar AS "nameAr", p.uom, p.tax_id AS "taxId",
+                  (p.active AND NOT EXISTS (SELECT 1 FROM store_hidden_products h WHERE h.product_id = p.id AND h.store_id = $3)) AS active
+             FROM products p WHERE p.tenant_id = $1 AND p.updated_at > $2`,
+          [...params, device.storeId],
+        )
+        .then((r) => r.rows),
       q(`SELECT id, product_id AS "productId", sku, barcode, extra_barcodes AS "extraBarcodes", plu, attributes, price, active
            FROM variants WHERE tenant_id = $1 AND updated_at > $2`),
       q(`SELECT id, name, kind, active FROM payment_methods WHERE tenant_id = $1 AND updated_at > $2`),
-      q(`SELECT id, name, role, pin_salt AS "pinSalt", pin_hash AS "pinHash", active
-           FROM users WHERE tenant_id = $1 AND updated_at > $2`),
+      // Staff limited to other stores cannot sign in on this till.
+      app.db
+        .query(
+          `SELECT u.id, u.name, u.role, u.pin_salt AS "pinSalt", u.pin_hash AS "pinHash",
+                  (u.active AND (u.role = 'owner' OR NOT EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id)
+                    OR EXISTS (SELECT 1 FROM user_stores us WHERE us.user_id = u.id AND us.store_id = $3))) AS active
+             FROM users u WHERE u.tenant_id = $1 AND u.updated_at > $2`,
+          [...params, device.storeId],
+        )
+        .then((r) => r.rows),
       // The till's own store, so receipt details edited in the back office reach it.
       app.db
         .query(

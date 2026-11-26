@@ -12,8 +12,9 @@ export async function labelRequestRoutes(app: FastifyInstance) {
               v.product_id AS "productId"
          FROM label_requests lr JOIN variants v ON v.id = lr.variant_id JOIN stores s ON s.id = lr.store_id
          LEFT JOIN users u ON u.id = lr.requested_by
-        WHERE lr.tenant_id = $1 AND lr.printed_at IS NULL ORDER BY lr.created_at LIMIT 500`,
-      [ctx.tenantId],
+        WHERE lr.tenant_id = $1 AND lr.printed_at IS NULL AND ($2::uuid[] IS NULL OR lr.store_id = ANY($2::uuid[]))
+        ORDER BY lr.created_at LIMIT 500`,
+      [ctx.tenantId, ctx.storeIds],
     );
     const ids = [...new Set(rows.map((r) => r.productId as string))];
     const products = ids.length ? (await app.db.query(`${PRODUCT_SELECT} WHERE p.id = ANY($1) AND p.tenant_id = $2`, [ids, ctx.tenantId])).rows : [];
@@ -25,8 +26,9 @@ export async function labelRequestRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const { ids } = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).parse(req.body);
     const { rowCount } = await app.db.query(
-      "UPDATE label_requests SET printed_at = now() WHERE tenant_id = $1 AND id = ANY($2) AND printed_at IS NULL",
-      [ctx.tenantId, ids],
+      `UPDATE label_requests SET printed_at = now()
+        WHERE tenant_id = $1 AND id = ANY($2) AND printed_at IS NULL AND ($3::uuid[] IS NULL OR store_id = ANY($3::uuid[]))`,
+      [ctx.tenantId, ids, ctx.storeIds],
     );
     await adminAudit(app.db, ctx, "label.printed", "label_request", ids[0]!, { count: rowCount });
     return { printed: rowCount };

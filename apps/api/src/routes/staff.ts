@@ -41,8 +41,8 @@ async function pinMatches(pin: string, salt: string, hash: string) {
 
 const forbidden = (message: string) => new HttpError(403, "forbidden", message);
 
-/** Inventory helpers record who did it the same way for back office and staff phone. */
-const asActor = (s: StaffContext): AdminContext => ({ userId: s.userId, tenantId: s.tenantId, role: s.role === "owner" ? "owner" : "manager", name: s.name });
+/** Inventory helpers record who did it the same way for back office and staff phone, limited to the phone's store. */
+const asActor = (s: StaffContext): AdminContext => ({ userId: s.userId, tenantId: s.tenantId, role: s.role === "owner" ? "owner" : "manager", name: s.name, storeIds: [s.storeId] });
 
 export async function staffRoutes(app: FastifyInstance) {
   /** The phone's own token, which must belong to a staff device. */
@@ -193,7 +193,7 @@ export async function staffRoutes(app: FastifyInstance) {
     const id = z.string().uuid().parse(req.params.id);
     const b = CountLinesSchema.parse(req.body);
     return withTx(app.db, async (tx) => {
-      const r = await saveCountLines(tx, s, id, b.lines);
+      const r = await saveCountLines(tx, asActor(s), id, b.lines);
       if (r.storeId !== s.storeId) throw new HttpError(404, "not_found", "Stock count not found");
       return { id: r.id, saved: r.saved };
     });

@@ -1,7 +1,10 @@
 export interface Me {
-  user: { id: string; name: string; role: "owner" | "manager" };
+  /** storeIds null: head office, sees every store. A list: a store manager for those stores. */
+  user: { id: string; name: string; role: "owner" | "manager"; storeIds: string[] | null };
   tenant: { id: string; name: string; currency: string };
   stores: { id: string; name: string; code: string; timezone: string }[];
+  /** Every store of the business, for the other end of a stock transfer. */
+  transferStores?: { id: string; name: string; code: string }[];
   account: {
     status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
     trialEndsAt: string | null;
@@ -47,6 +50,8 @@ export interface Staff {
   active: boolean;
   lastLoginAt: string | null;
   canSignIn: boolean;
+  /** Empty: works at every store. */
+  storeIds: string[];
 }
 export interface Device { id: string; name: string; role: "till" | "display" | "staff"; pairedAt: string; lastSeenAt: string | null; online: boolean }
 export interface Register {
@@ -176,6 +181,10 @@ export interface Store {
   cashRoundingStep: number;
   receiptFooter: string | null;
   priceListId?: string | null;
+  ownership: "owned" | "franchise";
+  franchisee: string | null;
+  royaltyBp: number;
+  marketingFeeBp: number;
 }
 
 export type PromotionKind = "percent_off" | "buy_x_get_y" | "multi_buy" | "order_percent_off" | "order_amount_off";
@@ -224,4 +233,69 @@ export interface PriceListItem {
   basePrice: number;
   price: number;
   productActive: boolean;
+}
+
+/** Head office: one store's figures for a period. */
+export interface StoreOverview {
+  id: string;
+  code: string;
+  name: string;
+  ownership: "owned" | "franchise";
+  franchisee: string | null;
+  bills: number;
+  refunds: number;
+  refundTotal: number;
+  total: number;
+  net: number;
+  vat: number;
+  discounts: number;
+  lastSaleAt: string | null;
+  averageBill: number;
+  previousTotal: number;
+  /** Percent change against the period before, or null with nothing to compare. */
+  change: number | null;
+  stockValue: number;
+  stockNoCost: number;
+  incomingTransfers: number;
+  transfersToSend: number;
+  registers: number;
+  tills: number;
+  tillsOnline: number;
+  openShifts: number;
+}
+export interface HqOverview {
+  from: string;
+  to: string;
+  days: number;
+  stores: StoreOverview[];
+  totals: { bills: number; refunds: number; refundTotal: number; total: number; net: number; vat: number; discounts: number; previousTotal: number; stockValue: number; averageBill: number; change: number | null };
+  trend: { date: string; storeId: string; total: number }[];
+}
+export interface RoyaltyRow {
+  id: string;
+  code: string;
+  name: string;
+  franchisee: string | null;
+  royaltyBp: number;
+  marketingFeeBp: number;
+  sales: number;
+  refunds: number;
+  net: number;
+  royalty: number;
+  marketingFee: number;
+  due: number;
+}
+export interface ProductStore {
+  storeId: string;
+  code: string;
+  name: string;
+  ownership: "owned" | "franchise";
+  sold: boolean;
+  priceListId: string | null;
+  priceListName: string | null;
+  /** Other stores or customers on the same price list. */
+  listSharedWith: number;
+  storePrice: number | null;
+  price: number;
+  onHand: number;
 }

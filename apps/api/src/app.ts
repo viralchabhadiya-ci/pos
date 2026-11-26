@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import type { Db } from "./db.js";
 import { HttpError, unauthorized } from "./errors.js";
 import { hashToken } from "./security.js";
+import { isHqOnly } from "./stores.js";
 import { customerRoutes } from "./routes/customers.js";
 import { orderRoutes } from "./routes/orders.js";
 import { pairingRoutes } from "./routes/pairing.js";
@@ -31,6 +32,8 @@ export interface AdminContext {
   tenantId: string;
   role: "owner" | "manager";
   name: string;
+  /** The stores this user may see, or null for every store (owners, unrestricted managers). */
+  storeIds: string[] | null;
   /** Set when platform support signed in as this user, to help the business. */
   support?: { by: string; reason: string; endsAt: string };
   /** Set when the change came through the public API with this key. */
@@ -92,7 +95,9 @@ export async function buildApp(
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ")) throw new HttpError(401, "unauthorized", "Please sign in");
     const { rows } = await db.query(
-      `SELECT u.id, u.tenant_id, u.role, u.name, t.status, s.support_reason, s.expires_at, p.name AS support_name
+      `SELECT u.id, u.tenant_id, u.role, u.name, t.status, s.support_reason, s.expires_at, p.name AS support_name,
+              CASE WHEN u.role = 'owner' THEN NULL
+                   ELSE (SELECT array_agg(us.store_id ORDER BY us.store_id) FROM user_stores us WHERE us.user_id = u.id) END AS store_ids
          FROM admin_sessions s JOIN users u ON u.id = s.user_id JOIN tenants t ON t.id = u.tenant_id
          LEFT JOIN platform_users p ON p.id = s.support_by
         WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
@@ -105,10 +110,15 @@ export async function buildApp(
     if (!row.support_name && (row.status === "suspended" || row.status === "cancelled")) {
       throw new HttpError(401, "unauthorized", "This business account is paused. Contact support.");
     }
+    const storeIds: string[] | null = row.store_ids ?? null;
+    if (storeIds && isHqOnly(req.method, req.url)) {
+      throw new HttpError(403, "forbidden", "Only head office can do this. Ask the owner.");
+    }
     return {
       userId: row.id,
       tenantId: row.tenant_id,
       role: row.role,
+      storeIds,
       name: row.support_name ? `${row.support_name} (support)` : row.name,
       support: row.support_name
         ? { by: row.support_name, reason: row.support_reason, endsAt: (row.expires_at as Date).toISOString() }

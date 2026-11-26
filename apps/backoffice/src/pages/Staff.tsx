@@ -15,7 +15,12 @@ type Role = keyof typeof ROLE_LABEL;
 export function Staff({ me }: { me: Me }) {
   const list = useLoad(() => api<{ staff: Person[] }>("/staff"), []);
   const [editing, setEditing] = useState<Person | "new" | null>(null);
-  const canEdit = (p: Person) => me.user.role === "owner" || p.role === "cashier";
+  const mine = me.user.storeIds;
+  // A store manager looks after cashiers who work only at their stores.
+  const canEdit = (p: Person) =>
+    me.user.role === "owner" || (p.role === "cashier" && (!mine || (p.storeIds.length > 0 && p.storeIds.every((id) => mine.includes(id)))));
+  const storeName = (id: string) => me.stores.find((s) => s.id === id)?.name ?? "Another store";
+  const multi = me.stores.length > 1 || !!mine;
 
   return (
     <div className="page">
@@ -40,6 +45,7 @@ export function Staff({ me }: { me: Me }) {
               <tr>
                 <th scope="col">Name</th>
                 <th scope="col">Role</th>
+                {multi && <th scope="col" className="hide-sm">Works at</th>}
                 <th scope="col" className="hide-sm">Back office sign-in</th>
                 <th scope="col" className="hide-xs">Status</th>
                 <th scope="col"><span className="sr-only">Actions</span></th>
@@ -55,6 +61,15 @@ export function Staff({ me }: { me: Me }) {
                     </span>
                   </td>
                   <td>{ROLE_LABEL[p.role]}</td>
+                  {multi && (
+                    <td className="hide-sm">
+                      {p.role === "owner" || p.storeIds.length === 0 ? (
+                        <span className="muted">All stores</span>
+                      ) : (
+                        p.storeIds.map(storeName).join(", ")
+                      )}
+                    </td>
+                  )}
                   <td className="hide-sm">
                     {p.canSignIn ? (
                       <>
@@ -80,7 +95,7 @@ export function Staff({ me }: { me: Me }) {
                         <Icon name="edit" size={18} /> <span className="hide-xs">Edit</span>
                       </button>
                     ) : (
-                      <span className="muted small">Owner only</span>
+                      <span className="muted small">{me.user.role === "owner" || p.role !== "cashier" ? "Owner only" : "Head office"}</span>
                     )}
                   </td>
                 </tr>
@@ -114,6 +129,12 @@ function PersonDialog({ person, me, onClose, onSaved }: { person: Person | null;
   const [email, setEmail] = useState(person?.email ?? "");
   const [password, setPassword] = useState("");
   const [active, setActive] = useState(person?.active ?? true);
+  const mine = me.user.storeIds;
+  // Store managers can only hand out their own stores; head office can also pick "every store".
+  const [everywhere, setEverywhere] = useState(!mine && (person ? person.storeIds.length === 0 : true));
+  const [stores, setStores] = useState<string[]>(person?.storeIds.length ? person.storeIds : mine && mine.length === 1 ? [...mine] : []);
+  const pickable = me.stores;
+  const showStores = role !== "owner" && (pickable.length > 1 || !!mine);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -128,6 +149,7 @@ function PersonDialog({ person, me, onClose, onSaved }: { person: Person | null;
     if (backOffice && password && password.length < 8) errs.password = "Use at least 8 characters.";
     if (backOffice && password && !email) errs.email = "Add an email so they can sign in with this password.";
     if (backOffice && email && !password && !person?.canSignIn) errs.password = "Set a password so they can sign in.";
+    if (showStores && !everywhere && stores.length === 0) errs.stores = "Pick at least one store.";
     setErrors(errs);
     if (Object.keys(errs).length) {
       document.getElementById(`sf-${Object.keys(errs)[0]}`)?.focus();
@@ -142,6 +164,7 @@ function PersonDialog({ person, me, onClose, onSaved }: { person: Person | null;
       email: backOffice ? email.trim() || null : null,
       password: backOffice ? password || null : null,
       ...(person ? { active } : {}),
+      ...(showStores ? { storeIds: everywhere ? [] : stores } : {}),
     };
     try {
       if (person) await api(`/staff/${person.id}`, { method: "PUT", body });
@@ -193,6 +216,52 @@ function PersonDialog({ person, me, onClose, onSaved }: { person: Person | null;
             />
           )}
         </Field>
+        {showStores && (
+          <fieldset className="group" aria-describedby={errors.stores ? "sf-stores-error" : undefined}>
+            <legend>Works at</legend>
+            {!mine && (
+              <label className="check">
+                <input type="radio" name="sf-where" checked={everywhere} onChange={() => setEverywhere(true)} />
+                <span>
+                  Every store
+                  <span className="hint">{role === "manager" ? "Head office: sees and runs every store." : "Can sign in on every till."}</span>
+                </span>
+              </label>
+            )}
+            {!mine && (
+              <label className="check">
+                <input type="radio" name="sf-where" checked={!everywhere} onChange={() => setEverywhere(false)} />
+                <span>
+                  Only these stores
+                  <span className="hint">
+                    {role === "manager" ? "A store manager sees only these stores' sales, stock and staff." : "Their PIN works only on these stores' tills."}
+                  </span>
+                </span>
+              </label>
+            )}
+            {!everywhere && (
+              <div className={mine ? "store-checks" : "store-checks indent"} id="sf-stores">
+                {pickable.map((st) => (
+                  <label key={st.id} className="check">
+                    <input
+                      type="checkbox"
+                      checked={stores.includes(st.id)}
+                      onChange={(e) => setStores((xs) => (e.target.checked ? [...xs, st.id] : xs.filter((x) => x !== st.id)))}
+                    />
+                    <span>
+                      {st.name} <span className="muted small">· {st.code}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {errors.stores && (
+              <p className="field-error" id="sf-stores-error">
+                {errors.stores}
+              </p>
+            )}
+          </fieldset>
+        )}
         {backOffice && (
           <fieldset className="group">
             <legend>Back office sign-in</legend>

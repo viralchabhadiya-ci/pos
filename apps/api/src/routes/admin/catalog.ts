@@ -8,6 +8,7 @@ import { HttpError, notFound } from "../../errors.js";
 import { loadProduct } from "../../public/serialize.js";
 import { emitEvent } from "../../webhooks/events.js";
 import { adminAudit, forbidden, isUniqueViolation } from "./common.js";
+import { assertStore } from "../../stores.js";
 
 const CategorySchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -61,14 +62,17 @@ const ListSchema = z.object({
   status: z.enum(["active", "inactive", "low", "all"]).default("all"),
 });
 
-export const PRODUCT_SELECT = `
+/** Stock is summed over every store, or over the stores in the uuid[] parameter named. */
+export const productSelect = (stores?: string) => `
   SELECT p.id, v.id AS "variantId", p.name, p.name_ar AS "nameAr", p.category_id AS "categoryId", c.name AS "categoryName",
          p.uom, p.tax_id AS "taxId", v.price, v.cost, v.barcode, v.extra_barcodes AS "extraBarcodes", v.sku, v.plu,
          v.reorder_level AS "reorderLevel", p.active, p.updated_at AS "updatedAt", oh.qty AS "onHand"
     FROM products p
     JOIN LATERAL (SELECT * FROM variants v WHERE v.product_id = p.id ORDER BY v.id LIMIT 1) v ON true
-    JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m WHERE m.variant_id = v.id) oh ON true
+    JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m
+                   WHERE m.variant_id = v.id ${stores ? `AND (${stores}::uuid[] IS NULL OR m.store_id = ANY(${stores}::uuid[]))` : ""}) oh ON true
     LEFT JOIN categories c ON c.id = p.category_id`;
+export const PRODUCT_SELECT = productSelect();
 
 const empty = (s: string | null | undefined) => (s ? s : null);
 
@@ -244,7 +248,8 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.get("/products", async (req) => {
     const ctx = await app.authAdmin(req);
     const { q, categoryId, status } = ListSchema.parse(req.query);
-    const params: unknown[] = [ctx.tenantId];
+    // A store manager sees the stock of their own stores.
+    const params: unknown[] = [ctx.tenantId, ctx.storeIds];
     const where = ["p.tenant_id = $1"];
     if (q) {
       params.push(`%${q}%`, q);
@@ -260,13 +265,15 @@ export async function catalogRoutes(app: FastifyInstance) {
     if (status === "active") where.push("p.active");
     if (status === "inactive") where.push("NOT p.active");
     if (status === "low") where.push("p.active AND v.reorder_level IS NOT NULL AND oh.qty <= v.reorder_level");
-    const { rows } = await app.db.query(`${PRODUCT_SELECT} WHERE ${where.join(" AND ")} ORDER BY p.name LIMIT 500`, params);
+    const { rows } = await app.db.query(`${productSelect("$2")} WHERE ${where.join(" AND ")} ORDER BY p.name LIMIT 500`, params);
     return { products: rows };
   });
 
   app.get<{ Params: { id: string } }>("/products/:id", async (req) => {
     const ctx = await app.authAdmin(req);
-    const { rows } = await app.db.query(`${PRODUCT_SELECT} WHERE p.id = $1 AND p.tenant_id = $2`, [req.params.id, ctx.tenantId]);
+    const { rows } = ctx.storeIds
+      ? await app.db.query(`${productSelect("$3")} WHERE p.id = $1 AND p.tenant_id = $2`, [req.params.id, ctx.tenantId, ctx.storeIds])
+      : await app.db.query(`${PRODUCT_SELECT} WHERE p.id = $1 AND p.tenant_id = $2`, [req.params.id, ctx.tenantId]);
     if (!rows[0]) throw notFound("Product");
     return rows[0];
   });
@@ -290,6 +297,7 @@ export async function catalogRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/products/:id/stock", async (req) => {
     const ctx = await app.authAdmin(req);
     const body = StockSchema.parse(req.body);
+    assertStore(ctx, body.storeId);
     const { rows } = await app.db.query(
       `SELECT v.id FROM variants v JOIN stores s ON s.id = $3 AND s.tenant_id = v.tenant_id
         WHERE v.product_id = $1 AND v.tenant_id = $2 ORDER BY v.id LIMIT 1`,

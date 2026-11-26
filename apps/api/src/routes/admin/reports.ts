@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { money, toCsv } from "../../csv.js";
 import { HttpError } from "../../errors.js";
+import { storeParam } from "../../stores.js";
 
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-01-31");
 
@@ -25,8 +26,8 @@ function range(q: z.infer<typeof RangeSchema>) {
   if (days > MAX_DAYS) throw new HttpError(400, "bad_request", `Pick at most ${MAX_DAYS} days`);
 }
 
-/** Orders in the range, by each store's own calendar day. $1 tenant, $2 store or null, $3 from, $4 to. */
-const SCOPE = `o.tenant_id = $1 AND ($2::uuid IS NULL OR o.store_id = $2)
+/** Orders in the range, by each store's own calendar day. $1 tenant, $2 stores or null, $3 from, $4 to. */
+const SCOPE = `o.tenant_id = $1 AND ($2::uuid[] IS NULL OR o.store_id = ANY($2::uuid[]))
   AND (o.created_at AT TIME ZONE s.timezone)::date BETWEEN $3::date AND $4::date`;
 
 export interface Column {
@@ -84,7 +85,7 @@ export const SALES: Record<GroupBy, { sql: string; columns: Column[]; title: str
                    SUM(o.total)::int AS total, SUM(o.discount_total)::int AS discount,
                    COALESCE((SELECT SUM(ol.qty) FROM order_lines ol JOIN orders o2 ON o2.id = ol.order_id JOIN stores s2 ON s2.id = o2.store_id
                      WHERE o2.cashier_id = o.cashier_id AND o2.refund_of_order_id IS NULL
-                       AND o2.tenant_id = $1 AND ($2::uuid IS NULL OR o2.store_id = $2)
+                       AND o2.tenant_id = $1 AND ($2::uuid[] IS NULL OR o2.store_id = ANY($2::uuid[]))
                        AND (o2.created_at AT TIME ZONE s2.timezone)::date BETWEEN $3::date AND $4::date), 0)::float AS items
               FROM orders o JOIN stores s ON s.id = o.store_id WHERE ${SCOPE} GROUP BY o.cashier_id),
           events AS (
@@ -92,14 +93,14 @@ export const SALES: Record<GroupBy, { sql: string; columns: Column[]; title: str
                    COUNT(*) FILTER (WHERE a.action = 'till.no_sale')::int AS "noSales",
                    COUNT(*) FILTER (WHERE a.action IN ('till.price_override', 'till.discount'))::int AS overrides
               FROM audit_log a LEFT JOIN stores s ON s.id = (a.data->>'storeId')::uuid
-             WHERE a.tenant_id = $1 AND a.entity = 'till_event' AND ($2::uuid IS NULL OR s.id = $2)
+             WHERE a.tenant_id = $1 AND a.entity = 'till_event' AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[]))
                AND (a.at AT TIME ZONE COALESCE(s.timezone, 'Asia/Dubai'))::date BETWEEN $3::date AND $4::date
              GROUP BY a.user_id),
           shifts AS (
             SELECT se.opened_by AS id,
                    ROUND(SUM(EXTRACT(EPOCH FROM (COALESCE(se.closed_at, now()) - se.opened_at))) / 360.0) / 10.0 AS hours
               FROM sessions se JOIN registers r ON r.id = se.register_id JOIN stores s ON s.id = r.store_id
-             WHERE s.tenant_id = $1 AND ($2::uuid IS NULL OR s.id = $2)
+             WHERE s.tenant_id = $1 AND ($2::uuid[] IS NULL OR s.id = ANY($2::uuid[]))
                AND (se.opened_at AT TIME ZONE s.timezone)::date BETWEEN $3::date AND $4::date
              GROUP BY se.opened_by)
           SELECT u.id, u.name, COALESCE(sa.orders, 0) AS orders,
@@ -221,14 +222,21 @@ function withMargin(rows: Record<string, unknown>[]) {
   return rows;
 }
 
+/**
+ * The stores a report covers as a uuid[] parameter: the caller's own list (store managers),
+ * else the one store asked for, else every store.
+ */
+const storesOf = (q: { storeId?: string | null; stores?: string[] | null }) =>
+  q.stores !== undefined ? q.stores : q.storeId ? [q.storeId] : null;
+
 /** Runs one sales report for a tenant; used by the screen, the CSV and scheduled emails. */
 export async function runSalesReport(
   db: { query: FastifyInstance["db"]["query"] },
   tenantId: string,
-  q: { groupBy: GroupBy; from: string; to: string; storeId?: string | null },
+  q: { groupBy: GroupBy; from: string; to: string; storeId?: string | null; stores?: string[] | null },
 ) {
   const report = SALES[q.groupBy];
-  const { rows } = await db.query(report.sql, [tenantId, q.storeId ?? null, q.from, q.to]);
+  const { rows } = await db.query(report.sql, [tenantId, storesOf(q), q.from, q.to]);
   if (q.groupBy === "margin" || q.groupBy === "margin_category") withMargin(rows);
   return { columns: report.columns, rows, title: report.title };
 }
@@ -259,7 +267,7 @@ function sendCsv(reply: FastifyReply, filename: string, columns: Column[], rows:
 export async function runVatReport(
   db: { query: FastifyInstance["db"]["query"] },
   tenantId: string,
-  q: { from: string; to: string; storeId?: string | null },
+  q: { from: string; to: string; storeId?: string | null; stores?: string[] | null },
 ) {
   const { rows } = await db.query(
     `SELECT COALESCE(t.kind, CASE WHEN ol.tax_rate_bp > 0 THEN 'standard' ELSE 'none' END) AS kind,
@@ -272,7 +280,7 @@ export async function runVatReport(
        FROM order_lines ol JOIN orders o ON o.id = ol.order_id JOIN stores s ON s.id = o.store_id
        LEFT JOIN taxes t ON t.id = ol.tax_id
       WHERE ${SCOPE} GROUP BY 1, 2 ORDER BY 2 DESC, 1`,
-    [tenantId, q.storeId ?? null, q.from, q.to],
+    [tenantId, storesOf(q), q.from, q.to],
   );
   const sum = (kind: string, key: "net" | "vat") =>
     rows.filter((r) => r.kind === kind).reduce((n, r) => n + (r[key] as number), 0);
@@ -304,7 +312,7 @@ export async function adminReportRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const q = SalesSchema.parse(req.query);
     range(q);
-    const report = await runSalesReport(app.db, ctx.tenantId, q);
+    const report = await runSalesReport(app.db, ctx.tenantId, { ...q, stores: storeParam(ctx, q.storeId) });
     if (q.format === "csv") return sendCsv(reply, `sales-by-${q.groupBy}-${q.from}-to-${q.to}.csv`, report.columns, report.rows);
     return { from: q.from, to: q.to, groupBy: q.groupBy, ...report };
   });
@@ -318,7 +326,7 @@ export async function adminReportRoutes(app: FastifyInstance) {
     const ctx = await app.authAdmin(req);
     const q = RangeSchema.parse(req.query);
     range(q);
-    const { rows, boxes } = await runVatReport(app.db, ctx.tenantId, q);
+    const { rows, boxes } = await runVatReport(app.db, ctx.tenantId, { ...q, stores: storeParam(ctx, q.storeId) });
     if (q.format === "csv") return sendCsv(reply, `vat-${q.from}-to-${q.to}.csv`, VAT_COLUMNS, vatCsvRows(rows));
     return { from: q.from, to: q.to, rows, boxes };
   });
