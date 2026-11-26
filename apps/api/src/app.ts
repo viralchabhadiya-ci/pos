@@ -22,6 +22,8 @@ import { approvalRoutes } from "./routes/approvals.js";
 import { staffRoutes } from "./routes/staff.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
+import { publicRoutes } from "./public/routes.js";
+import { deliverOptionsFromEnv, type DeliverOptions } from "./webhooks/deliver.js";
 
 /** A signed-in back office user (owner or manager). */
 export interface AdminContext {
@@ -31,6 +33,8 @@ export interface AdminContext {
   name: string;
   /** Set when platform support signed in as this user, to help the business. */
   support?: { by: string; reason: string; endsAt: string };
+  /** Set when the change came through the public API with this key. */
+  apiKey?: { id: string; name: string };
 }
 
 export interface DeviceContext {
@@ -48,12 +52,13 @@ declare module "fastify" {
     authAdmin: (req: FastifyRequest) => Promise<AdminContext>;
     paymentProviders: Map<string, PaymentProvider>;
     mailer: Mailer;
+    webhookOptions: DeliverOptions;
   }
 }
 
 export async function buildApp(
   db: Db,
-  opts: { logger?: boolean; paymentProviders?: Map<string, PaymentProvider>; mailer?: Mailer } = {},
+  opts: { logger?: boolean; paymentProviders?: Map<string, PaymentProvider>; mailer?: Mailer; webhookOptions?: DeliverOptions } = {},
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: opts.logger ?? false,
@@ -65,6 +70,7 @@ export async function buildApp(
   app.decorate("db", db);
   app.decorate("paymentProviders", opts.paymentProviders ?? createProviders());
   app.decorate("mailer", opts.mailer ?? createMailer());
+  app.decorate("webhookOptions", opts.webhookOptions ?? deliverOptionsFromEnv());
 
   app.decorate("authenticate", async (req: FastifyRequest): Promise<DeviceContext> => {
     const header = req.headers.authorization;
@@ -136,5 +142,6 @@ export async function buildApp(
   await app.register(staffRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
+  await app.register(publicRoutes);
   return app;
 }

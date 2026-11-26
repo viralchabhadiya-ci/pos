@@ -1,0 +1,27 @@
+/* Developers: API keys and webhooks */
+.dev-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.dev-head p { margin: 0; flex: 1 1 320px; }
+.badge.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.bad-text { color: var(--bad); }
+.mono, .secret-box code, .kv code, .attempts code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.scope-list { font-size: var(--text-sm); color: var(--muted); }
+.scope-grid { display: grid; gap: 0 var(--space-4); grid-template-columns: 1fr; }
+@media (min-width: 640px) { .scope-grid { grid-template-columns: 1fr 1fr; } }
+.scope-grid .check { margin: var(--space-2) 0; }
+.scope-grid .hint code, .check .hint code { font-size: var(--text-xs); }
+.secret-box { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-3) var(--space-4); border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); margin: var(--space-3) 0; }
+.secret-box code { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; font-size: var(--text-sm); user-select: all; }
+.url-cell, .url-title { overflow-wrap: anywhere; word-break: break-word; }
+.url-title { font-size: var(--text-lg); }
+.min0 { min-width: 0; flex: 1 1 320px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-4); margin: var(--space-3) 0 var(--space-4); }
+.kv dt { color: var(--muted); font-size: var(--text-sm); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.attempts { list-style: none; padding: 0; margin: 0 0 var(--space-4); display: grid; gap: var(--space-2); }
+.attempts li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); min-width: 0; }
+.code-block { margin: var(--space-2) 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.code-block.small { max-height: 120px; margin: var(--space-1) 0 0; }
+.danger-zone { margin-top: var(--space-5); }
+.danger-zone h2 { font-size: var(--text-md); }
+.attempts li > span { display: block; }

@@ -4,6 +4,8 @@ import type { DeviceContext } from "../app.js";
 import { withTx, type Tx } from "../db.js";
 import { HttpError } from "../errors.js";
 import { lockGiftCard, lockOrCreateGiftCard, loyaltySettings, moveGiftCard, movePoints } from "../loyalty.js";
+import { loadOrder } from "../public/serialize.js";
+import { emitEvent, emitLowStock } from "../webhooks/events.js";
 import { audit } from "./audit.js";
 
 type Result =
@@ -166,6 +168,14 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
     await audit(tx, device, order.cashierId, "order.discount", "order", order.id, { discount: manualDiscount });
   }
   if (!isRefund) await recordPromotions(tx, device, order, totals.lines.reduce((s, l) => s + l.promoDiscount, 0));
+
+  // Webhooks go out once the order is saved; the payload is the same one GET /v1/orders/:id returns.
+  await emitEvent(tx, device.tenantId, isRefund ? "order.refunded" : "order.created", async () => loadOrder(tx, device.tenantId, order.id));
+  if (!isRefund) {
+    const moved = new Map<string, number>();
+    for (const l of order.lines) if (l.variantId) moved.set(l.variantId, (moved.get(l.variantId) ?? 0) - l.qty);
+    await emitLowStock(tx, device.tenantId, device.storeId, moved);
+  }
   return { id: order.id, status: "created", totalsMismatch: mismatch };
 }
 
