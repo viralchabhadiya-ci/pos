@@ -330,24 +330,21 @@ export function SellScreen({ setup, user, session }: Props) {
     setShowFloor(true);
   };
 
-  const sendToKitchen = async () => {
-    const lines = kitchenLines(cart);
-    if (!lines.length) return setNotice(t("Nothing new for the kitchen."));
-    const ticket = {
-      id: crypto.randomUUID(),
-      tabId: cart.tabId ?? null,
-      label: tabLabel(cart),
-      guests: cart.guests ?? null,
-      lines,
-      userId: user.id,
-      createdAt: new Date().toISOString(),
-    };
+  /** Queues a kitchen ticket for kitchen screens, and prints it on the hub's printer if it has one. */
+  const dispatchTicket = async (lines: ReturnType<typeof kitchenLines>, label: string, tabId: string | null, guests: number | null) => {
+    const ticket = { id: crypto.randomUUID(), tabId, label, guests, lines, userId: user.id, createdAt: new Date().toISOString() };
     await queueKitchenTicket(ticket);
     if (hub?.printer) {
       printOnHub(kitchenDoc(ticket, { by: user.name, timezone: setup.store.timezone })).catch(() =>
         setNotice(t("The kitchen ticket did not print. Kitchen screens still get it.")),
       );
     }
+  };
+
+  const sendToKitchen = async () => {
+    const lines = kitchenLines(cart);
+    if (!lines.length) return setNotice(t("Nothing new for the kitchen."));
+    await dispatchTicket(lines, tabLabel(cart), cart.tabId ?? null, cart.guests ?? null);
     const sent = markSent(cart);
     setCart(sent);
     setNotice(t("Sent to the kitchen."));
@@ -420,6 +417,13 @@ export function SellScreen({ setup, user, session }: Props) {
   };
 
   const finish = (order: LocalOrder) => {
+    // In a restaurant, a sale paid at the counter (not on a table) goes to the kitchen as it is paid.
+    // Items of a split part the kitchen hasn't had yet go to it under the table's name.
+    if (restaurant && !isRefund && !cart.tabId) {
+      const lines = kitchenLines({ ...cart, kitchenVoids: [] });
+      const label = split ? tabLabel(split.rest) : t("Order {n}", { n: order.number.split("-").at(-1) ?? order.number });
+      if (lines.length) void dispatchTicket(lines, label, split?.rest.tabId ?? null, null);
+    }
     setPaying(false);
     setReceipt(order);
     setReceiptPhone(cart.customer?.phone ?? null);

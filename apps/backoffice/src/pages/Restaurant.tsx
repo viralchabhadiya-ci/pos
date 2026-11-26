@@ -43,7 +43,16 @@ interface Group {
   options: Option[];
   productIds: string[];
 }
+interface KitchenToday {
+  tickets: number;
+  open: number;
+  ready: number;
+  avgSeconds: number | null;
+  maxSeconds: number | null;
+  oldestOpenSeconds: number | null;
+}
 interface Overview {
+  kitchen: KitchenToday;
   storeId: string;
   tables: DiningTable[];
   openTabs: OpenTab[];
@@ -317,16 +326,58 @@ function BulkDialog({ o, areas, onClose, onSaved }: { o: Overview; areas: string
 
 // Open bills
 
+const minutes = (s: number | null) => (s === null ? "–" : s < 60 ? "under 1 min" : `${Math.round(s / 60)} min`);
+
+function Kitchen({ k }: { k: KitchenToday }) {
+  if (!k.tickets) return null;
+  return (
+    <section className="panel" aria-labelledby="kitchen-today">
+      <h2 id="kitchen-today">Kitchen today</h2>
+      <dl className="stat-row">
+        <div>
+          <dt>Tickets</dt>
+          <dd className="tnum">{k.tickets}</dd>
+        </div>
+        <div>
+          <dt>Being made</dt>
+          <dd className="tnum">{k.open - k.ready}</dd>
+        </div>
+        <div>
+          <dt>Waiting to be picked up</dt>
+          <dd className="tnum">{k.ready}</dd>
+        </div>
+        <div>
+          <dt>Average time to ready</dt>
+          <dd className="tnum">{minutes(k.avgSeconds)}</dd>
+        </div>
+        <div>
+          <dt>Longest</dt>
+          <dd className="tnum">{minutes(k.maxSeconds)}</dd>
+        </div>
+      </dl>
+      {k.oldestOpenSeconds !== null && k.oldestOpenSeconds > 20 * 60 && (
+        <p className="notice warn">
+          <Icon name="alert" /> One ticket has waited {minutes(k.oldestOpenSeconds)}.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function Bills({ o, onChanged }: { o: Overview; onChanged: () => void }) {
   if (!o.openTabs.length)
     return (
-      <EmptyState icon="receipt" title="No open bills">
-        <p>Bills opened on the till show here until they are paid.</p>
-      </EmptyState>
+      <>
+        <Kitchen k={o.kitchen} />
+        <EmptyState icon="receipt" title="No open bills">
+          <p>Bills opened on the till show here until they are paid.</p>
+        </EmptyState>
+      </>
     );
   const total = o.openTabs.reduce((s, t) => s + t.total, 0);
   return (
     <>
+      <Kitchen k={o.kitchen} />
       <div className="section-head">
         <p className="muted">
           {o.openTabs.length} open · {aed(total)} not paid yet

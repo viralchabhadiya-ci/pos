@@ -76,7 +76,13 @@ export async function tabRoutes(app: FastifyInstance) {
   app.get("/tabs", async (req) => {
     const device = await till(req);
     const { rows } = await app.db.query(`${TAB_SELECT} WHERE t.store_id = $1 AND t.status = 'open' ORDER BY t.opened_at`, [device.storeId]);
-    return { tabs: rows, serverTime: new Date().toISOString() };
+    // Food the kitchen has marked ready and nobody has picked up yet, by tab.
+    const ready = await app.db.query(
+      `SELECT tab_id, COUNT(*)::int AS n FROM kitchen_tickets WHERE store_id = $1 AND status = 'ready' AND tab_id IS NOT NULL GROUP BY tab_id`,
+      [device.storeId],
+    );
+    const readyBy = new Map(ready.rows.map((r) => [r.tab_id as string, r.n as number]));
+    return { tabs: rows.map((t) => ({ ...t, readyTickets: readyBy.get(t.id) ?? 0 })), serverTime: new Date().toISOString() };
   });
 
   app.get<{ Params: { id: string } }>("/tabs/:id", async (req) => {

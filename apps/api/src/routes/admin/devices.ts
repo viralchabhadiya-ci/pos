@@ -18,7 +18,7 @@ const RegisterSchema = z.object({
     .regex(/^[A-Za-z0-9-]+$/, "Use letters, numbers or dashes"),
 });
 
-const PairingSchema = z.object({ role: z.enum(["till", "display", "staff"]).default("till") });
+const PairingSchema = z.object({ role: z.enum(["till", "display", "staff", "kitchen"]).default("till") });
 
 /** A device counts as online when it has talked to the cloud in the last few minutes. */
 const ONLINE_MINUTES = 5;

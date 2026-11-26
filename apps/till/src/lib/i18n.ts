@@ -412,6 +412,22 @@ export const AR: Record<string, string> = {
   More: "أكثر",
   "Pay these": "ادفع هذه",
   "That is the whole bill. Close this and press Pay.": "هذه الفاتورة كاملة. أغلق هذا واضغط دفع.",
+  // Kitchen display
+  "Food ready": "الطعام جاهز",
+  "No connection. New tickets show when it is back.": "لا يوجد اتصال. تظهر الطلبات الجديدة عند عودته.",
+  "No connection. That change was not saved; try again.": "لا يوجد اتصال. لم يُحفظ التغيير؛ حاول مرة أخرى.",
+  Kitchen: "المطبخ",
+  "{n} to make": "{n} للتحضير",
+  "{n} ready": "{n} جاهز",
+  Recall: "استرجاع",
+  "Picked up in the last hour": "استُلمت في آخر ساعة",
+  "Back on screen": "أعده إلى الشاشة",
+  "Nothing yet.": "لا شيء بعد.",
+  "No tickets. New orders from the tills show here.": "لا توجد طلبات. تظهر هنا الطلبات الجديدة من نقاط البيع.",
+  "Waiting {time}": "بانتظار منذ {time}",
+  "Not ready": "غير جاهز",
+  "Picked up": "استُلم",
+  "Order {n}": "طلب {n}",
 };
 
 function load(): Lang {

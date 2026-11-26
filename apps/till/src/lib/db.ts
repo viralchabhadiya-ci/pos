@@ -66,7 +66,7 @@ export interface DeviceSetup {
   };
   register: { id: string; code: string; name: string };
   /** A device paired as a customer display shows the cart instead of selling. */
-  device?: { role: "till" | "display" };
+  device?: { role: "till" | "display" | "kitchen" };
   /** Base for digital receipt links (the QR on the receipt); null when not set up. */
   publicUrl?: string | null;
   lastSessionSeq: number;

@@ -5,6 +5,7 @@ import { useLang } from "./lib/i18n.js";
 import { SETUP_CHANGED, startSync } from "./lib/sync.js";
 import { currentSession, getSetup } from "./lib/till.js";
 import { CloseShiftScreen } from "./screens/CloseShiftScreen.js";
+import { KitchenScreen } from "./screens/KitchenScreen.js";
 import { DisplayScreen } from "./screens/DisplayScreen.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { MenuDialog } from "./screens/MenuDialog.js";
@@ -39,21 +40,23 @@ export function App() {
   }, []);
 
   const isDisplay = setup?.device?.role === "display";
+  const isKitchen = setup?.device?.role === "kitchen";
   // A till can open a second window (#display) on another screen for the customer.
   const secondWindow = window.location.hash === "#display";
 
   useEffect(() => {
-    if (!setup || isDisplay || secondWindow) return;
+    if (!setup || isDisplay || isKitchen || secondWindow) return;
     return startSync();
-  }, [setup, isDisplay, secondWindow]);
+  }, [setup, isDisplay, isKitchen, secondWindow]);
 
   // A scale picked on this till before opens again by itself.
   useEffect(() => {
-    if (setup && !isDisplay && !secondWindow) void reconnectScale();
-  }, [setup, isDisplay, secondWindow]);
+    if (setup && !isDisplay && !isKitchen && !secondWindow) void reconnectScale();
+  }, [setup, isDisplay, isKitchen, secondWindow]);
 
   if (!loaded) return null;
   if (!setup) return <PairScreen onPaired={reload} />;
+  if (isKitchen) return <KitchenScreen setup={setup} />;
   if (isDisplay || secondWindow) return <DisplayScreen setup={setup} remote={isDisplay} />;
 
   const bar = <StatusBar setup={setup} user={user} session={session} onMenu={user && session ? () => setMenu(true) : undefined} />;

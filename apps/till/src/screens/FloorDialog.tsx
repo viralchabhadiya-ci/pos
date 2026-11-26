@@ -79,13 +79,19 @@ export function FloorDialog({
               <button
                 key={table.id}
                 type="button"
-                className={`table-tile${tab ? " busy" : ""}${mine ? " mine" : ""}`}
+                className={`table-tile${tab ? " busy" : ""}${mine ? " mine" : ""}${tab?.readyTickets ? " ready" : ""}`}
                 disabled={disabled}
                 onClick={() => (moving ? onMove(table) : tab ? onOpen(table, tab) : setAsking(table))}
               >
                 <span className="table-name">{table.name}</span>
                 {tab ? (
                   <>
+                    {tab.readyTickets ? (
+                      <span className="table-ready">
+                        <Icon name="chef" size={14} />
+                        {t("Food ready")}
+                      </span>
+                    ) : null}
                     <span className="table-total tnum">{money(tab.total)}</span>
                     <span className="table-meta">
                       {tab.guests ? `${t("{n} guests", { n: tab.guests })} · ` : ""}

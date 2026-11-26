@@ -25,6 +25,7 @@ import { unsubscribeRoutes } from "./routes/unsubscribe.js";
 import { shopRoutes } from "./routes/shop.js";
 import { signageRoutes } from "./routes/signage.js";
 import { tabRoutes } from "./routes/tabs.js";
+import { kitchenRoutes } from "./routes/kitchen.js";
 import { webOrderTillRoutes } from "./routes/webOrders.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
@@ -48,7 +49,7 @@ export interface AdminContext {
 
 export interface DeviceContext {
   deviceId: string;
-  role: "till" | "display" | "staff";
+  role: "till" | "display" | "staff" | "kitchen";
   registerId: string;
   storeId: string;
   tenantId: string;
@@ -162,6 +163,7 @@ export async function buildApp(
   await app.register(shopRoutes);
   await app.register(signageRoutes);
   await app.register(tabRoutes);
+  await app.register(kitchenRoutes);
   await app.register(webOrderTillRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
