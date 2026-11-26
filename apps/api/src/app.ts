@@ -28,6 +28,7 @@ import { tabRoutes } from "./routes/tabs.js";
 import { kitchenRoutes } from "./routes/kitchen.js";
 import { dineInRoutes } from "./routes/dineIn.js";
 import { webOrderTillRoutes } from "./routes/webOrders.js";
+import { deliveryInboundRoutes, deliveryTillRoutes } from "./routes/delivery.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
 import { publicRoutes } from "./public/routes.js";
@@ -167,6 +168,8 @@ export async function buildApp(
   await app.register(kitchenRoutes);
   await app.register(dineInRoutes);
   await app.register(webOrderTillRoutes);
+  await app.register(deliveryInboundRoutes);
+  await app.register(deliveryTillRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
   await app.register(publicRoutes);

@@ -34,7 +34,7 @@ export const OrderLineSchema = z.object({
 export const PaymentSchema = z.object({
   id: z.string().uuid(),
   methodId: z.string().uuid(),
-  kind: z.enum(["cash", "card", "card_manual", "gift_card", "points"]),
+  kind: z.enum(["cash", "card", "card_manual", "gift_card", "points", "delivery"]),
   amount: z.number().int(),
   tendered: z.number().int().optional(),
   reference: z.string().max(100).optional(),

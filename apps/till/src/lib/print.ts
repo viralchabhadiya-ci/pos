@@ -10,7 +10,7 @@ import { money, qtyText } from "./format.js";
 /** "en": English labels. "bilingual": English and Arabic, as UAE shoppers expect. */
 export type ReceiptLang = "en" | "bilingual";
 
-const METHOD_AR: Record<string, string> = { cash: "نقدًا", card: "بطاقة", card_manual: "بطاقة", gift_card: "بطاقة هدية", points: "نقاط" };
+const METHOD_AR: Record<string, string> = { cash: "نقدًا", card: "بطاقة", card_manual: "بطاقة", gift_card: "بطاقة هدية", points: "نقاط", delivery: "منصة التوصيل" };
 
 /** How a payment shows on a receipt: the method, plus the end of a gift card's number or the points. */
 export function paymentLabel(name: string, p: { giftCardCode?: string; points?: number }): string {
@@ -130,7 +130,7 @@ export function shiftReportDoc(
 ): ReceiptDoc {
   const fmt = (d: Date | string) =>
     new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeStyle: "short", timeZone: setup.store.timezone }).format(new Date(d));
-  const label: Record<string, string> = { cash: "Cash", card: "Card", card_manual: "Card (manual)", gift_card: "Gift card", points: "Points" };
+  const label: Record<string, string> = { cash: "Cash", card: "Card", card_manual: "Card (manual)", gift_card: "Gift card", points: "Points", delivery: "Delivery platform" };
   const blocks: Block[] = [
     { type: "text", text: setup.store.name, align: "center", bold: true },
     { type: "text", text: `${opts.kind} REPORT`, align: "center", bold: true, double: true },

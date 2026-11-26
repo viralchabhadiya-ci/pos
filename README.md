@@ -312,6 +312,38 @@ are on the online menu (Online store → Products), with their choices, in Engli
 Limits: 3 orders waiting per table, 60 an hour per network. Paying on the kiosk itself (card on the stand) is not
 in this version. Migration `127_dine_in.sql`.
 
+### Delivery platforms (Talabat, Deliveroo, Careem, Noon Food)
+
+Back office → **Delivery**. Connect each branch's platform account (head office only): the platform's branch id,
+commission, a menu markup and the usual preparation time. Each connection gets an **order address**
+(`PUBLIC_URL/delivery-api/<id>`) and a **signing secret** to give the platform or the integration partner.
+The menu sent is the online menu (Online store → Products) with choices; markup prices round up to 0.50.
+
+On the till, new orders beep under **Online orders** with the time left to accept. **Accept** (with "ready in")
+tells the platform and sends the ticket to the kitchen; **Turn down** asks why. Ready on the kitchen screen (or
+**Packed and ready**) tells the platform to send the rider. **Rider collected** rings the sale up paid by the
+**Delivery platform** method, so VAT, stock, receipts and e-invoices work as usual. **Busy** pauses new orders for
+15 to 60 minutes; **Sold out** hides an item for an hour or until turned back on. A platform's cancellation shows
+on the kitchen screen. Delivery → Payouts adds up sales, commission and payout per platform.
+
+The platform calls `POST /delivery-api/<id>` with JSON and a `POS-Signature: t=<unix seconds>,v1=<hex
+HMAC-SHA256 of "<t>.<body>">` header (calls older than 5 minutes are refused). Amounts are fils with VAT:
+
+```json
+{ "type": "order.created", "order": { "id": "tb-1001", "code": "4471", "customerName": "Aisha", "note": "Napkins",
+  "acceptBy": "2026-11-26T20:30:00Z", "total": 1300,
+  "items": [{ "posId": "<our item id, from the menu>", "sku": "optional", "name": "Water", "qty": 2, "price": 200,
+              "modifiers": [{ "name": "Large", "price": 200 }], "note": "No ice" }] } }
+{ "type": "order.cancelled", "orderId": "tb-1001", "reason": "Customer cancelled" }
+{ "type": "order.rider", "orderId": "tb-1001", "riderName": "Imran", "arrivesAt": "2026-11-26T20:34:00Z" }
+```
+
+We call the connection's own address, signed the same way, with `order.accepted` (`prepMinutes`),
+`order.rejected` (`reason`), `order.ready`, `menu.updated`, `items.availability` and `store.status`. Without that
+address nothing is sent and each call shows as "Not sent" under Delivery → Activity, so a store can try it all
+(and send **Test order**s) before going live. Each platform's own API needs a partner account; until then this
+format is what an integration partner (or a small bridge) maps to. Migration `128_delivery.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

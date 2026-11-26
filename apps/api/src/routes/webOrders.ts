@@ -3,6 +3,7 @@ import { z } from "zod";
 import { HttpError } from "../errors.js";
 import { audit } from "./audit.js";
 import { moveWebOrder } from "./admin/onlineStore.js";
+import { acceptOrder, readyOrder, rejectOrder } from "../delivery/platform.js";
 
 /**
  * Online orders on the till: the list for this store, marking them ready, and loading one
@@ -13,13 +14,18 @@ export async function webOrderTillRoutes(app: FastifyInstance) {
     const device = await app.authenticate(req);
     const { rows } = await app.db.query(
       `SELECT w.id, w.number, w.status, w.name, w.phone, w.note, w.lines, w.total, w.pickup_code AS "pickupCode", w.customer_id AS "customerId",
-              w.created_at AS "createdAt", w.ready_at AS "readyAt", w.channel, w.table_id AS "tableId", d.name AS "tableName", k.name AS "kioskName"
+              w.created_at AS "createdAt", w.ready_at AS "readyAt", w.channel, w.table_id AS "tableId", d.name AS "tableName", k.name AS "kioskName",
+              dc.name AS "platformName", dc.provider, w.external_code AS "externalCode", w.accept_by AS "acceptBy", w.prep_minutes AS "prepMinutes",
+              w.accepted_at AS "acceptedAt", w.rider_name AS "riderName", w.rider_at AS "riderAt"
          FROM web_orders w LEFT JOIN dining_tables d ON d.id = w.table_id LEFT JOIN kiosks k ON k.id = w.kiosk_id
+         LEFT JOIN delivery_channels dc ON dc.id = w.delivery_channel_id
         WHERE w.tenant_id = $1 AND w.store_id = $2 AND w.status IN ('new', 'accepted', 'ready')
         ORDER BY w.created_at LIMIT 100`,
       [device.tenantId, device.storeId],
     );
-    return { orders: rows };
+    // The store is on a delivery platform: the till shows Busy and Sold out even with no orders.
+    const delivery = await app.db.query("SELECT 1 FROM delivery_channels WHERE store_id = $1 AND active LIMIT 1", [device.storeId]);
+    return { orders: rows, delivery: !!delivery.rowCount, serverTime: new Date().toISOString() };
   });
 
   /** A guest's order from the table QR code, added to that table's bill by the till. */
@@ -49,6 +55,14 @@ export async function webOrderTillRoutes(app: FastifyInstance) {
       const b = z.object({ userId: z.string().uuid(), reason: z.string().trim().max(200).nullish() }).parse(req.body);
       const user = await app.db.query("SELECT 1 FROM users WHERE id = $1 AND tenant_id = $2 AND active", [b.userId, device.tenantId]);
       if (!user.rowCount) throw new HttpError(400, "bad_request", "Unknown cashier");
+      // A platform's order moves through the platform, which must hear about it.
+      const ch = await app.db.query("SELECT channel FROM web_orders WHERE id = $1 AND store_id = $2", [id, device.storeId]);
+      if (ch.rows[0]?.channel === "delivery") {
+        const who = { tenantId: device.tenantId, storeIds: [device.storeId], userId: b.userId };
+        if (step === "accept") return acceptOrder(app.db, who, id);
+        if (step === "ready") return readyOrder(app.db, who, id);
+        return rejectOrder(app.db, who, id, b.reason || "The store can't take this order");
+      }
       return moveWebOrder(
         app,
         app.db,

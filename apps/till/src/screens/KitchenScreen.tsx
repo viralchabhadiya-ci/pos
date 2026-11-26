@@ -19,6 +19,8 @@ export interface KitchenTicket {
   doneAt: string | null;
   createdBy: string | null;
   registerName: string | null;
+  /** The delivery platform cancelled the order after the kitchen got it. */
+  cancelledAt?: string | null;
 }
 
 /** Minutes after which a ticket turns amber, then red. */
@@ -32,7 +34,7 @@ export const clock = (seconds: number) => {
 };
 
 /** A short high beep for a new ticket; browsers may block sound until the screen is touched once. */
-function beep() {
+export function beep() {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
@@ -195,13 +197,19 @@ export function KitchenScreen({ setup }: { setup: DeviceSetup }) {
             const age = (serverNow - Date.parse(k.createdAt)) / 1000;
             const isReady = k.status === "ready";
             return (
-              <li key={k.id} className={`kds-ticket ${k.status} ${isReady ? "" : ageClass(age)}`}>
+              <li key={k.id} className={`kds-ticket ${k.status} ${isReady || k.cancelledAt ? "" : ageClass(age)}${k.cancelledAt ? " cancelled" : ""}`}>
                 <div className="kds-top">
                   <span className="kds-label">{k.label}</span>
                   <span className="kds-age tnum" aria-label={t("Waiting {time}", { time: clock(age) })}>
                     {isReady ? t("Ready") : clock(age)}
                   </span>
                 </div>
+                {k.cancelledAt && (
+                  <p className="kds-cancelled" role="status">
+                    <Icon name="alert" size={18} />
+                    {t("Cancelled by the platform. Don't make it.")}
+                  </p>
+                )}
                 <div className="kds-meta muted">
                   {[k.guests ? t("{n} guests", { n: k.guests }) : null, k.createdBy, k.status === "new" ? t("New") : null].filter(Boolean).join(" · ")}
                 </div>
@@ -224,7 +232,14 @@ export function KitchenScreen({ setup }: { setup: DeviceSetup }) {
                     );
                   })}
                 </ul>
-                {isReady ? (
+                {k.cancelledAt ? (
+                  <div className="kds-actions">
+                    <button type="button" className="btn primary" onClick={() => bump(k, "done")}>
+                      <Icon name="close" size={18} />
+                      {t("Clear")}
+                    </button>
+                  </div>
+                ) : isReady ? (
                   <div className="kds-actions">
                     <button type="button" className="btn ghost" onClick={() => bump(k, "preparing")}>
                       {t("Not ready")}

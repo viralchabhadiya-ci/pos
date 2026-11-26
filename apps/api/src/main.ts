@@ -5,6 +5,7 @@ import { migrate } from "./migrate.js";
 import { startReportWorker } from "./reports/deliver.js";
 import { startWebhookWorker } from "./webhooks/deliver.js";
 import { startCampaignWorker } from "./crm/campaigns.js";
+import { startSoldOutWorker } from "./delivery/platform.js";
 
 const db = createPool();
 await migrate(db);
@@ -21,4 +22,7 @@ app.addHook("onClose", stopWebhooks);
 // Sends marketing campaigns and birthday offers during the day, in the shop's time.
 const stopCampaigns = startCampaignWorker(db, app.senders, app.log, { publicUrl: process.env.PUBLIC_URL });
 app.addHook("onClose", stopCampaigns);
+// Puts items sold out for delivery back on the platforms' menus when their time is up.
+const stopSoldOut = startSoldOutWorker(db, app.log);
+app.addHook("onClose", stopSoldOut);
 await app.listen({ port: Number(process.env.PORT ?? 3000), host: process.env.HOST ?? "0.0.0.0" });

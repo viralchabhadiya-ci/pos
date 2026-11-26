@@ -88,4 +88,23 @@ describe("guest orders on the till", () => {
       ["Burger", 2, 3300, "No onion please"],
     ]);
   });
+
+  it("keeps a delivery platform's prices and item notes, and leaves out items not on the menu", async () => {
+    const { addWebLines } = await import("../screens/WebOrdersDialog.js");
+    const items = new Map([burger, tea].map((i) => [i.variantId, i]));
+    const o = {
+      id: "w2", number: "W-2", status: "accepted" as const, name: "Aisha", phone: null, note: null, total: 0, pickupCode: "1234", customerId: null, createdAt: "",
+      channel: "delivery" as const,
+      lines: [
+        { variantId: "bg", name: "Burger", qty: 1, unitPrice: 3600, note: "Well done", modifiers: [{ name: "Cheese", price: 300 }] },
+        { variantId: "tea", name: "Tea", qty: 2, unitPrice: 550 },
+        { variantId: null, name: "Mystery box", qty: 1, unitPrice: 900 },
+      ],
+    };
+    const cart = addWebLines(emptyCart(), o, items);
+    expect(cart.lines.map((l) => [l.name, l.qty, l.unitPrice, l.note ?? null, l.modifiers?.map((m) => m.name) ?? []])).toEqual([
+      ["Burger", 1, 3600, "Well done", ["Cheese"]],
+      ["Tea", 2, 550, null, []],
+    ]);
+  });
 });

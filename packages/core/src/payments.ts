@@ -1,6 +1,7 @@
 import { roundCash } from "./money.js";
 
-export type PaymentMethodKind = "cash" | "card" | "card_manual" | "gift_card" | "points";
+/** delivery: paid to a delivery platform (Talabat, Deliveroo, ...), which pays the store later. */
+export type PaymentMethodKind = "cash" | "card" | "card_manual" | "gift_card" | "points" | "delivery";
 
 export interface PaymentInput {
   id: string;
