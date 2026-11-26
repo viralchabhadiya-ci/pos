@@ -79,7 +79,21 @@ export async function restaurantRoutes(app: FastifyInstance) {
          FROM modifier_groups g WHERE g.tenant_id = $1 AND g.active ORDER BY g.sort, g.name`,
       [ctx.tenantId],
     );
-    return { storeId, tables: tables.rows, openTabs: tabs.rows, modifierGroups: groups.rows };
+    // The kitchen today, in the store's time: how many tickets and how long food took.
+    const kitchen = await app.db.query(
+      `WITH day AS (
+         SELECT k.* FROM kitchen_tickets k JOIN stores s ON s.id = k.store_id
+          WHERE k.store_id = $1 AND k.tenant_id = $2 AND (k.created_at AT TIME ZONE s.timezone)::date = (now() AT TIME ZONE s.timezone)::date)
+       SELECT COUNT(*)::int AS tickets,
+              COUNT(*) FILTER (WHERE status <> 'done')::int AS open,
+              COUNT(*) FILTER (WHERE status = 'ready')::int AS ready,
+              ROUND(AVG(EXTRACT(EPOCH FROM ready_at - created_at)) FILTER (WHERE ready_at IS NOT NULL))::int AS "avgSeconds",
+              MAX(EXTRACT(EPOCH FROM ready_at - created_at))::int AS "maxSeconds",
+              (SELECT ROUND(EXTRACT(EPOCH FROM now() - MIN(created_at)))::int FROM day WHERE status IN ('new', 'preparing')) AS "oldestOpenSeconds"
+         FROM day`,
+      [storeId, ctx.tenantId],
+    );
+    return { storeId, tables: tables.rows, openTabs: tabs.rows, modifierGroups: groups.rows, kitchen: kitchen.rows[0] };
   });
 
   // Tables: each store's managers lay out their own.

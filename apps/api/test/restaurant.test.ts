@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createPairingCode } from "../src/seed.js";
 import { hashPassword } from "../src/security.js";
 import { makeOrder, openSession, postOrders, setup, teardown, type Ctx } from "./helpers.js";
 
@@ -204,5 +205,89 @@ describe("kitchen tickets", () => {
     expect((await api("DELETE", `/modifier-groups/${groupId}`)).statusCode).toBe(200);
     const { rows } = await ctx.db.query("SELECT COUNT(*)::int AS n FROM products WHERE $1::uuid = ANY(modifier_group_ids)", [groupId]);
     expect(rows[0].n).toBe(0);
+  });
+});
+
+describe("kitchen screen", () => {
+  let screen: { authorization: string };
+  const kds = (method: "GET" | "POST", url: string, payload?: unknown) => ctx.app.inject({ method, url, headers: screen, payload: payload as object });
+  const ticket = (label: string, tabId: string | null = null) => ({
+    id: randomUUID(),
+    tabId,
+    label,
+    guests: 2,
+    lines: [
+      { lineId: "a", name: "Burger", qty: 2, modifiers: ["Large"], note: null },
+      { lineId: "b", name: "Fries", qty: 1, modifiers: [], note: "Extra salt" },
+    ],
+    userId: ctx.data.cashierId,
+    createdAt: new Date().toISOString(),
+  });
+
+  beforeAll(async () => {
+    const code = await createPairingCode(ctx.db, ctx.data.registerId, "kitchen");
+    const res = await ctx.app.inject({ method: "POST", url: "/pairing/claim", payload: { code, deviceId: randomUUID(), deviceName: "Kitchen" } });
+    expect(res.statusCode).toBe(200);
+    screen = { authorization: `Bearer ${res.json().token}` };
+    await ctx.db.query("UPDATE kitchen_tickets SET status = 'done', done_at = now() - interval '2 hours'");
+  });
+
+  it("is only for kitchen screens, and a kitchen screen can't open bills", async () => {
+    expect((await till("GET", "/kitchen/tickets")).statusCode).toBe(403);
+    expect((await kds("GET", "/tabs")).statusCode).toBe(403);
+    expect((await kds("GET", "/device/setup")).json().device.role).toBe("kitchen");
+  });
+
+  it("shows the store's open tickets, ticks items off and bumps them through to picked up", async () => {
+    const t = ticket("Takeaway 7");
+    await till("POST", "/kitchen-tickets", t);
+    let list = (await kds("GET", "/kitchen/tickets")).json();
+    expect(list.tickets.map((x: { label: string }) => x.label)).toEqual(["Takeaway 7"]);
+    expect(list.recent).toEqual([]);
+
+    const ticked = (await kds("POST", `/kitchen/tickets/${t.id}/lines`, { lineId: "a", done: true })).json();
+    expect(ticked).toMatchObject({ status: "preparing", doneLines: ["a"] });
+    expect(ticked.startedAt).toBeTruthy();
+    expect((await kds("POST", `/kitchen/tickets/${t.id}/lines`, { lineId: "zz", done: true })).statusCode).toBe(404);
+    expect((await kds("POST", `/kitchen/tickets/${t.id}/lines`, { lineId: "a", done: false })).json().doneLines).toEqual([]);
+
+    const ready = (await kds("POST", `/kitchen/tickets/${t.id}/status`, { status: "ready" })).json();
+    expect(ready.status).toBe("ready");
+    expect(ready.doneLines.sort()).toEqual(["a", "b"]);
+    expect(ready.readyAt).toBeTruthy();
+
+    expect((await kds("POST", `/kitchen/tickets/${t.id}/status`, { status: "done" })).json().doneAt).toBeTruthy();
+    list = (await kds("GET", "/kitchen/tickets")).json();
+    expect(list.tickets).toEqual([]);
+    expect(list.recent.map((x: { id: string }) => x.id)).toEqual([t.id]);
+
+    // Recall: back on the screen as ready.
+    const back = (await kds("POST", `/kitchen/tickets/${t.id}/status`, { status: "ready" })).json();
+    expect(back).toMatchObject({ status: "ready", doneAt: null });
+    expect((await kds("POST", `/kitchen/tickets/${randomUUID()}/status`, { status: "ready" })).statusCode).toBe(404);
+  });
+
+  it("tells the tills a table's food is ready, and the back office how long the kitchen takes", async () => {
+    const tabId = randomUUID();
+    const opened = await till("PUT", `/tabs/${tabId}`, { tableId: tableIds["7"] ?? null, name: "Bar", guests: 1, cart: cartWith(1), total: 2500, version: 0, userId: ctx.data.cashierId });
+    expect(opened.statusCode).toBe(200);
+    const t = ticket("Bar", tabId);
+    await till("POST", "/kitchen-tickets", t);
+    const readyOf = async () => ((await till("GET", "/tabs")).json().tabs.find((x: { id: string }) => x.id === tabId) as { readyTickets: number }).readyTickets;
+    expect(await readyOf()).toBe(0);
+    await kds("POST", `/kitchen/tickets/${t.id}/status`, { status: "ready" });
+    expect(await readyOf()).toBe(1);
+    await kds("POST", `/kitchen/tickets/${t.id}/status`, { status: "done" });
+    expect(await readyOf()).toBe(0);
+
+    const k = (await api("GET", `/restaurant?storeId=${ctx.data.storeId}`)).json().kitchen;
+    expect(k.tickets).toBeGreaterThanOrEqual(2);
+    expect(k.avgSeconds).toBeGreaterThanOrEqual(0);
+  });
+
+  it("lets head office pair a kitchen screen", async () => {
+    const res = await api("POST", `/registers/${ctx.data.registerId}/pairing-code`, { role: "kitchen" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().role).toBe("kitchen");
   });
 });

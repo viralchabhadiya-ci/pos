@@ -61,3 +61,12 @@ describe("restaurant cart", () => {
     expect(kitchenLines(rest)).toEqual([]);
   });
 });
+
+describe("kitchen screen timers", () => {
+  it("shows minutes and seconds and turns amber at 10 minutes, red at 20", async () => {
+    const { ageClass, clock } = await import("../screens/KitchenScreen.js");
+    expect(clock(65)).toBe("1:05");
+    expect(clock(-3)).toBe("0:00");
+    expect([ageClass(599), ageClass(600), ageClass(1200)]).toEqual(["", "warn", "late"]);
+  });
+});

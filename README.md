@@ -281,6 +281,21 @@ For cafés and restaurants: back office → **Restaurant**.
 Tables need the connection to the cloud or the hub. Offline, the till still sells without a table. Service charge
 and tips are not in this version. Migration `125_restaurant.sql`.
 
+### Kitchen display
+
+A tablet or TV in the kitchen shows the orders: back office → **Tills & devices** → add a device as a **Kitchen
+screen**, then open the till app on it and enter the code. Tickets come in oldest first with a timer that turns
+amber at 10 minutes and red at 20, and a beep for each new one.
+
+- A ticket is what a table's **Send** put on it (new items, and cancels in red), or a sale paid at the counter in
+  a store with tables ("Order 0042").
+- Cooks tap items to tick them off, then **Ready**: the waiter sees "Food ready" on that table on the floor.
+  **Picked up** clears it; **Recall** brings back one picked up in the last hour.
+- Back office → Restaurant → Open bills shows the kitchen today: tickets, average and longest time to ready.
+
+The screen needs the connection to the cloud (through the hub when there is one). Stations (grill, bar) are not
+split yet: every kitchen screen shows the store's tickets. Migration `126_kitchen.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

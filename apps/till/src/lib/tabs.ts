@@ -19,6 +19,8 @@ export interface RemoteTab {
   updatedAt: string;
   openedBy: string | null;
   updatedBy: string | null;
+  /** Kitchen tickets of this bill marked ready and not yet picked up. */
+  readyTickets?: number;
 }
 
 /** Saving lost to another till's change, or the bill is closed; `tab` is how it is now. */
