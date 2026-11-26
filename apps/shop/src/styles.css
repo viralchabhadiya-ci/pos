@@ -626,3 +626,28 @@ textarea {
   flex-basis: 100%;
   font-weight: 600;
 }
+
+/* Choices for an item (size, extras) */
+.choices { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-2) var(--space-3) var(--space-3); margin: 0 0 var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.choices.short { border-color: var(--bad, #ad2219); }
+.choices legend { padding: 0 var(--space-1); }
+.warn-text { color: var(--bad, #ad2219); font-weight: 600; font-size: var(--text-sm); }
+.choice {
+  display: flex; align-items: center; gap: var(--space-3); min-height: 48px; padding: var(--space-2) var(--space-3); width: 100%;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--fg); text-align: start; font: inherit; cursor: pointer;
+}
+.choice.on { border-color: var(--accent); background: var(--accent-soft, var(--surface-2)); font-weight: 600; }
+.choice-mark { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong, var(--line)); display: grid; place-items: center; flex: none; font-size: 13px; }
+.choice.on .choice-mark { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.choice-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.basket-name small { display: block; }
+
+/* Self-order kiosk: a tablet on a stand, used by touch at arm's length */
+.page.kiosk { max-width: 1100px; font-size: 18px; }
+.page.kiosk .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.page.kiosk .product { flex-direction: column; align-items: stretch; min-height: 150px; }
+.page.kiosk .add { min-height: 56px; font-size: 18px; }
+.page.kiosk .chip { min-height: 52px; font-size: 18px; }
+.kiosk-done { text-align: center; gap: var(--space-4); }
+.big-number { font-size: clamp(96px, 22vw, 200px); font-weight: 800; line-height: 1; margin: 0; color: var(--accent); }
+.lead { font-size: 22px; margin: 0; }

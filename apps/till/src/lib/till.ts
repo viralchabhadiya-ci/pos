@@ -25,7 +25,9 @@ export async function pairDevice(apiUrl: string, code: string, deviceName: strin
   if (setup.openSession) {
     // The register already has an open shift (e.g. this is a replacement device): adopt it.
     const s = setup.openSession;
-    await db.sessions.put({ ...s, state: "open", orderSeq: 0 });
+    const { lastOrderSeq, ...shift } = s;
+    // Its sales carry on after the shift's last one, so their numbers don't clash.
+    await db.sessions.put({ ...shift, state: "open", orderSeq: lastOrderSeq ?? 0 });
     await db.setMeta("currentSessionId", s.id);
   }
   return setup;

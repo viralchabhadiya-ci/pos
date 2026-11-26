@@ -73,10 +73,10 @@ export async function taxMap(db: Db | Tx, tenantId: string) {
  * store's prices (its price list, else the normal price). Stock is what the store holds less
  * what open online orders have asked for.
  */
-async function storeProducts(db: Db | Tx, tenantId: string, storeId: string, variantIds?: string[]) {
+export async function storeProducts(db: Db | Tx, tenantId: string, storeId: string, variantIds?: string[]) {
   const { rows } = await db.query(
     `SELECT v.id AS "variantId", p.id AS "productId", p.name, p.name_ar AS "nameAr", p.description, p.uom, p.category_id AS "categoryId",
-            p.tax_id AS "taxId", COALESCE(pli.price, v.price) AS price,
+            p.tax_id AS "taxId", p.modifier_group_ids AS "modifierGroupIds", COALESCE(pli.price, v.price) AS price,
             (SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.variant_id = v.id AND m.store_id = $2)
               - (SELECT COALESCE(SUM((l->>'qty')::numeric), 0) FROM web_orders w, jsonb_array_elements(w.lines) l
                   WHERE w.tenant_id = $1 AND w.store_id = $2 AND w.status IN ('new', 'accepted', 'ready') AND l->>'variantId' = v.id::text) AS available

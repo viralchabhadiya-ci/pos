@@ -70,3 +70,22 @@ describe("kitchen screen timers", () => {
     expect([ageClass(599), ageClass(600), ageClass(1200)]).toEqual(["", "warn", "late"]);
   });
 });
+
+describe("guest orders on the till", () => {
+  it("adds a guest's items with their choices and puts the note on the first item", async () => {
+    const { addWebLines } = await import("../screens/WebOrdersDialog.js");
+    const items = new Map([burger, tea].map((i) => [i.variantId, i]));
+    const o = {
+      id: "w1", number: "W-1", status: "new" as const, name: null, phone: null, note: "No onion please", total: 0, pickupCode: "001", customerId: null, createdAt: "",
+      lines: [
+        { variantId: "bg", name: "Burger", qty: 2, modifiers: [{ groupId: "g", optionId: "c", name: "Cheese", price: 300 }] },
+        { variantId: "tea", name: "Tea", qty: 1 },
+      ],
+    };
+    const cart = addWebLines(addItem(emptyCart(), tea, 1, id), o, items);
+    expect(cart.lines.map((l) => [l.name, l.qty, l.unitPrice, l.note ?? null])).toEqual([
+      ["Tea", 2, 500, null],
+      ["Burger", 2, 3300, "No onion please"],
+    ]);
+  });
+});

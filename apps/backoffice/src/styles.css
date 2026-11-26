@@ -647,3 +647,22 @@ textarea { width: 100%; font: inherit; padding: var(--space-2) var(--space-3); b
 .stat-row > div { min-width: 0; }
 .stat-row dt { font-size: var(--text-sm); color: var(--muted); }
 .stat-row dd { margin: 2px 0 0; font-size: var(--text-xl); font-weight: 700; }
+
+/* Restaurant: QR codes and kiosks */
+.row-actions.start { justify-content: flex-start; flex-wrap: wrap; }
+.qr-grid { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-3); }
+.qr-grid li { display: flex; gap: var(--space-3); align-items: center; padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.qr-grid li > span { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.qr { background: #fff; flex: none; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.kiosk-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.kiosk-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+.kiosk-list li > span:first-child { flex: 1; min-width: 160px; display: flex; flex-direction: column; }
+.qr-sheet { display: none; }
+@media print {
+  .qr-sheet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12mm; position: absolute; left: 0; top: 0; width: 100%; }
+  .qr-sheet, .qr-sheet * { visibility: visible; }
+  .qr-card { break-inside: avoid; display: flex; flex-direction: column; align-items: center; gap: 3mm; padding: 6mm; border: 1px dashed #999; text-align: center; color: #000; }
+  .qr-card strong { font-size: 20pt; }
+  .qr-card span { font-size: 10pt; }
+}

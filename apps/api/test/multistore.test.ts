@@ -29,7 +29,7 @@ async function login(email: string, password: string) {
   return { authorization: `Bearer ${res.json().token}` };
 }
 const storeBody = (name: string, extra: object = {}) => ({ name, timezone: "Asia/Dubai", cashRoundingStep: 25, ...extra });
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(new Date());
 
 beforeAll(async () => {
   ctx = await setup();

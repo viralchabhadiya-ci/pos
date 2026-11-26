@@ -4,6 +4,7 @@ import { z } from "zod";
 import { withTx } from "../../db.js";
 import { HttpError, notFound } from "../../errors.js";
 import { assertStore } from "../../stores.js";
+import { newToken } from "../dineIn.js";
 import { adminAudit, isUniqueViolation } from "./common.js";
 
 const TableSchema = z.object({
@@ -63,7 +64,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (!storeId) throw notFound("Store");
     assertStore(ctx, storeId);
     const tables = await app.db.query(
-      `SELECT id, area, name, seats, sort FROM dining_tables WHERE store_id = $1 AND tenant_id = $2 AND active ORDER BY area, sort, name`,
+      `SELECT id, area, name, seats, sort, qr_token AS "qrToken" FROM dining_tables WHERE store_id = $1 AND tenant_id = $2 AND active ORDER BY area, sort, name`,
       [storeId, ctx.tenantId],
     );
     const tabs = await app.db.query(
@@ -93,7 +94,93 @@ export async function restaurantRoutes(app: FastifyInstance) {
          FROM day`,
       [storeId, ctx.tenantId],
     );
-    return { storeId, tables: tables.rows, openTabs: tabs.rows, modifierGroups: groups.rows, kitchen: kitchen.rows[0] };
+    const store = await app.db.query(`SELECT table_ordering FROM stores WHERE id = $1`, [storeId]);
+    const kiosks = await app.db.query(
+      `SELECT id, name, token, last_seen_at AS "lastSeenAt" FROM kiosks WHERE store_id = $1 AND tenant_id = $2 AND active ORDER BY created_at`,
+      [storeId, ctx.tenantId],
+    );
+    const online = await app.db.query(`SELECT COUNT(*)::int AS n FROM products WHERE tenant_id = $1 AND online AND active`, [ctx.tenantId]);
+    return {
+      storeId,
+      tables: tables.rows,
+      openTabs: tabs.rows,
+      modifierGroups: groups.rows,
+      kitchen: kitchen.rows[0],
+      tableOrdering: store.rows[0]?.table_ordering ?? false,
+      kiosks: kiosks.rows,
+      menuProducts: online.rows[0].n as number,
+      /** Where QR codes and kiosks point; null until SHOP_URL is set on the server. */
+      shopUrl: process.env.SHOP_URL?.replace(/\/$/, "") || null,
+    };
+  });
+
+  /** Guests may order from the QR code on their table (or not). */
+  app.put("/restaurant/settings", async (req) => {
+    const ctx = await app.authAdmin(req);
+    const body = z.object({ storeId: z.string().uuid(), tableOrdering: z.boolean() }).parse(req.body);
+    assertStore(ctx, body.storeId);
+    const { rowCount } = await app.db.query(`UPDATE stores SET table_ordering = $3 WHERE id = $1 AND tenant_id = $2`, [body.storeId, ctx.tenantId, body.tableOrdering]);
+    if (!rowCount) throw notFound("Store");
+    await adminAudit(app.db, ctx, "store.table_ordering", "store", body.storeId, { on: body.tableOrdering });
+    return { tableOrdering: body.tableOrdering };
+  });
+
+  /** Gives every table of the store that has none its QR code. */
+  app.post("/restaurant/qr-codes", async (req) => {
+    const ctx = await app.authAdmin(req);
+    const body = z.object({ storeId: z.string().uuid() }).parse(req.body);
+    assertStore(ctx, body.storeId);
+    const { rows } = await app.db.query(`SELECT id FROM dining_tables WHERE store_id = $1 AND tenant_id = $2 AND active AND qr_token IS NULL`, [body.storeId, ctx.tenantId]);
+    for (const r of rows) await app.db.query(`UPDATE dining_tables SET qr_token = $2 WHERE id = $1`, [r.id, newToken()]);
+    return { made: rows.length };
+  });
+
+  /** A new QR code for one table; the old one stops working (e.g. a photo of it went round). */
+  app.post<{ Params: { id: string } }>("/dining-tables/:id/new-qr", async (req) => {
+    const ctx = await app.authAdmin(req);
+    const t = await loadTable(ctx.tenantId, ctx.storeIds, z.string().uuid().parse(req.params.id));
+    const token = newToken();
+    await app.db.query(`UPDATE dining_tables SET qr_token = $2, updated_at = now() WHERE id = $1`, [t.id, token]);
+    await adminAudit(app.db, ctx, "table.new_qr", "dining_table", t.id, { name: t.name });
+    return { qrToken: token };
+  });
+
+  app.post("/kiosks", async (req, reply) => {
+    const ctx = await app.authAdmin(req);
+    const body = z.object({ storeId: z.string().uuid(), name: z.string().trim().min(1, "Give the kiosk a name").max(60) }).parse(req.body);
+    assertStore(ctx, body.storeId);
+    const store = await app.db.query(`SELECT 1 FROM stores WHERE id = $1 AND tenant_id = $2`, [body.storeId, ctx.tenantId]);
+    if (!store.rowCount) throw notFound("Store");
+    const id = randomUUID();
+    const token = newToken();
+    await app.db.query(`INSERT INTO kiosks (id, tenant_id, store_id, name, token) VALUES ($1, $2, $3, $4, $5)`, [id, ctx.tenantId, body.storeId, body.name, token]);
+    await adminAudit(app.db, ctx, "kiosk.create", "kiosk", id, { name: body.name });
+    reply.status(201);
+    return { id, name: body.name, token, lastSeenAt: null };
+  });
+
+  async function loadKiosk(tenantId: string, storeIds: string[] | null, id: string) {
+    const { rows } = await app.db.query(`SELECT * FROM kiosks WHERE id = $1 AND tenant_id = $2 AND active`, [id, tenantId]);
+    const k = rows[0];
+    if (!k || (storeIds && !storeIds.includes(k.store_id))) throw notFound("Kiosk");
+    return k;
+  }
+
+  app.post<{ Params: { id: string } }>("/kiosks/:id/new-link", async (req) => {
+    const ctx = await app.authAdmin(req);
+    const k = await loadKiosk(ctx.tenantId, ctx.storeIds, z.string().uuid().parse(req.params.id));
+    const token = newToken();
+    await app.db.query(`UPDATE kiosks SET token = $2 WHERE id = $1`, [k.id, token]);
+    await adminAudit(app.db, ctx, "kiosk.new_link", "kiosk", k.id, { name: k.name });
+    return { token };
+  });
+
+  app.delete<{ Params: { id: string } }>("/kiosks/:id", async (req) => {
+    const ctx = await app.authAdmin(req);
+    const k = await loadKiosk(ctx.tenantId, ctx.storeIds, z.string().uuid().parse(req.params.id));
+    await app.db.query(`UPDATE kiosks SET active = false WHERE id = $1`, [k.id]);
+    await adminAudit(app.db, ctx, "kiosk.delete", "kiosk", k.id, { name: k.name });
+    return { ok: true };
   });
 
   // Tables: each store's managers lay out their own.

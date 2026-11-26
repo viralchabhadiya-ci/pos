@@ -1,7 +1,8 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Field } from "../components/Field.js";
 import { Icon } from "../components/Icon.js";
 import { Modal } from "../components/Modal.js";
+import { Qr } from "../components/Qr.js";
 import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, errorText } from "../lib/api.js";
@@ -15,6 +16,13 @@ interface DiningTable {
   name: string;
   seats: number;
   sort: number;
+  qrToken: string | null;
+}
+interface Kiosk {
+  id: string;
+  name: string;
+  token: string;
+  lastSeenAt: string | null;
 }
 interface OpenTab {
   id: string;
@@ -53,6 +61,10 @@ interface KitchenToday {
 }
 interface Overview {
   kitchen: KitchenToday;
+  tableOrdering: boolean;
+  kiosks: Kiosk[];
+  menuProducts: number;
+  shopUrl: string | null;
   storeId: string;
   tables: DiningTable[];
   openTabs: OpenTab[];
@@ -68,7 +80,7 @@ function rule(g: Pick<Group, "minChoices" | "maxChoices">): string {
 /** Restaurants: each store's tables, the bills open on them now, and the choices items are made with. */
 export function Restaurant({ me, tab }: { me: Me; tab?: string }) {
   const hq = me.user.storeIds === null;
-  const current = tab === "bills" || tab === "modifiers" ? tab : "tables";
+  const current = tab === "bills" || tab === "modifiers" || tab === "ordering" ? tab : "tables";
   const [storeId, setStoreId] = useState(me.stores[0]?.id ?? "");
   const data = useLoad(() => api<Overview>(`/restaurant?storeId=${encodeURIComponent(storeId)}`), [storeId]);
   const o = data.data;
@@ -99,6 +111,7 @@ export function Restaurant({ me, tab }: { me: Me; tab?: string }) {
             ["tables", `Tables${o ? ` (${o.tables.length})` : ""}`, "#/restaurant"],
             ["bills", `Open bills${o ? ` (${o.openTabs.length})` : ""}`, "#/restaurant/bills"],
             ["modifiers", "Choices", "#/restaurant/modifiers"],
+            ["ordering", "QR & kiosks", "#/restaurant/ordering"],
           ] as const
         ).map(([id, label, href]) => (
           <a key={id} role="tab" className="tab tab-link" aria-selected={current === id} href={href}>
@@ -114,6 +127,8 @@ export function Restaurant({ me, tab }: { me: Me; tab?: string }) {
         <Tables o={o} onChanged={data.reload} />
       ) : current === "bills" ? (
         <Bills o={o} onChanged={data.reload} />
+      ) : current === "ordering" ? (
+        <Ordering o={o} onChanged={data.reload} />
       ) : (
         <Groups o={o} hq={hq} onChanged={data.reload} />
       )}
@@ -735,6 +750,238 @@ function GroupDialog({
             </button>
           </div>
         )}
+      </form>
+    </Modal>
+  );
+}
+
+// Guests ordering: QR codes on tables, and self-order kiosks
+
+function Ordering({ o, onChanged }: { o: Overview; onChanged: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const missing = o.tables.filter((t) => !t.qrToken).length;
+  const link = (kind: "t" | "k", token: string) => (o.shopUrl ? `${o.shopUrl}/#/${kind}/${token}` : null);
+
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      if (done) toast(done);
+      onChanged();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!printing) return;
+    const after = () => setPrinting(false);
+    window.addEventListener("afterprint", after);
+    const timer = setTimeout(() => window.print(), 300);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("afterprint", after);
+    };
+  }, [printing]);
+
+  return (
+    <>
+      {!o.shopUrl && (
+        <p className="notice warn">
+          <Icon name="alert" /> QR codes and kiosks open the shop app. Set SHOP_URL on the server to its address first.
+        </p>
+      )}
+      {o.menuProducts === 0 && (
+        <p className="notice warn">
+          <Icon name="alert" /> No products are on the online menu yet. Pick the ones guests can order under <a href="#/online-store/products">Online store → Products</a>.
+        </p>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          <Icon name="alert" /> {error}
+        </p>
+      )}
+
+      <section className="panel" aria-labelledby="qr-title">
+        <div className="panel-head">
+          <h2 id="qr-title">Order from the table</h2>
+        </div>
+        <p className="muted">
+          Each table gets its own QR code. Guests scan it, pick from the menu and send the order; the till shows it on that table to add to the bill, and
+          then it goes to the kitchen. Guests pay the bill as usual.
+        </p>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={o.tableOrdering}
+            disabled={busy}
+            onChange={(e) => void run(() => api("/restaurant/settings", { method: "PUT", body: { storeId: o.storeId, tableOrdering: e.target.checked } }), e.target.checked ? "Guests can order from their table" : "Table ordering is off; the QR codes show the menu only")}
+          />
+          <span>Guests can send orders from the QR code (when off, it shows the menu only)</span>
+        </label>
+        {!o.tables.length ? (
+          <p className="muted">Add tables first, under Tables.</p>
+        ) : (
+          <div className="row-actions start">
+            {missing > 0 && (
+              <button type="button" className="btn primary" disabled={busy} onClick={() => void run(() => api("/restaurant/qr-codes", { body: { storeId: o.storeId } }), "QR codes made")}>
+                Make QR codes for {missing} table{missing === 1 ? "" : "s"}
+              </button>
+            )}
+            {missing < o.tables.length && o.shopUrl && (
+              <button type="button" className="btn" onClick={() => setPrinting(true)}>
+                <Icon name="printer" /> Print QR codes
+              </button>
+            )}
+          </div>
+        )}
+        {o.shopUrl && o.tables.some((t) => t.qrToken) && (
+          <ul className="qr-grid">
+            {o.tables
+              .filter((t) => t.qrToken)
+              .map((t) => (
+                <li key={t.id}>
+                  <Qr text={link("t", t.qrToken!)!} size={112} label={`QR code for table ${t.name}`} />
+                  <span>
+                    <strong>Table {t.name}</strong>
+                    <span className="muted small">{t.area}</span>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={busy}
+                      onClick={() => void run(() => api(`/dining-tables/${t.id}/new-qr`, { body: {} }), `New QR code for table ${t.name}. Print it again; the old one no longer works.`)}
+                    >
+                      New code
+                    </button>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="panel" aria-labelledby="kiosk-title">
+        <div className="panel-head">
+          <h2 id="kiosk-title">Self-order kiosks</h2>
+          <button type="button" className="btn primary" onClick={() => setAdding(true)}>
+            <Icon name="plus" /> Add a kiosk
+          </button>
+        </div>
+        <p className="muted">
+          A tablet on a stand where guests order by themselves. It shows them a number; they pay at the till, which rings the order up from Online
+          orders, and the kitchen gets it under that number.
+        </p>
+        {!o.kiosks.length ? (
+          <p className="muted">No kiosks yet.</p>
+        ) : (
+          <ul className="kiosk-list">
+            {o.kiosks.map((k) => (
+              <li key={k.id}>
+                <span>
+                  <strong>{k.name}</strong>
+                  <span className="muted small">{k.lastSeenAt ? `Last used ${ago(k.lastSeenAt)}` : "Not opened yet"}</span>
+                </span>
+                {link("k", k.token) && (
+                  <a className="btn sm" href={link("k", k.token)!} target="_blank" rel="noreferrer">
+                    Open
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="btn sm hide-xs"
+                  onClick={() => {
+                    const l = link("k", k.token);
+                    if (l) void navigator.clipboard.writeText(l).then(() => toast("Link copied. Open it on the kiosk tablet."), () => toast("Copy did not work", "error"));
+                  }}
+                  disabled={!link("k", k.token)}
+                >
+                  Copy link
+                </button>
+                <button type="button" className="btn sm" disabled={busy} onClick={() => void run(() => api(`/kiosks/${k.id}/new-link`, { body: {} }), "New link made. Open it on the kiosk again.")}>
+                  New link
+                </button>
+                <button type="button" className="btn sm danger" disabled={busy} onClick={() => void run(() => api(`/kiosks/${k.id}`, { method: "DELETE" }), `${k.name} removed`)}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {adding && (
+        <KioskDialog
+          storeId={o.storeId}
+          onClose={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            onChanged();
+          }}
+        />
+      )}
+
+      {printing && o.shopUrl && (
+        <div className="qr-sheet" aria-hidden="true">
+          {o.tables
+            .filter((t) => t.qrToken)
+            .map((t) => (
+              <div key={t.id} className="qr-card">
+                <Qr text={link("t", t.qrToken!)!} size={220} label="" />
+                <strong>Table {t.name}</strong>
+                <span>Scan to see the menu and order · امسح لعرض القائمة والطلب</span>
+              </div>
+            ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function KioskDialog({ storeId, onClose, onSaved }: { storeId: string; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/kiosks", { body: { storeId, name: name.trim() } });
+      toast(`${name.trim()} added. Open its link on the tablet.`);
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal onClose={onClose} label="Add a kiosk">
+      <h2>Add a kiosk</h2>
+      <form onSubmit={submit} noValidate>
+        <Field label="Name" required hint="Where it stands, e.g. Entrance or Counter left">
+          {(p) => <input {...p} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus />}
+        </Field>
+        {error && (
+          <p className="form-error" role="alert">
+            <Icon name="alert" /> {error}
+          </p>
+        )}
+        <div className="dialog-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn primary" disabled={busy || !name.trim()}>
+            Add kiosk
+          </button>
+        </div>
       </form>
     </Modal>
   );

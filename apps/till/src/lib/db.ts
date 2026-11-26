@@ -70,7 +70,7 @@ export interface DeviceSetup {
   /** Base for digital receipt links (the QR on the receipt); null when not set up. */
   publicUrl?: string | null;
   lastSessionSeq: number;
-  openSession: { id: string; seq: number; openedBy: string; openedAt: string; openingCash: number } | null;
+  openSession: { id: string; seq: number; openedBy: string; openedAt: string; openingCash: number; lastOrderSeq?: number } | null;
 }
 
 export interface Session {

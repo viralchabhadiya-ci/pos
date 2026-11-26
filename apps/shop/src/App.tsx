@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { DineIn } from "./DineIn.js";
 import { ApiError, shopApi } from "./lib/api.js";
 import { countItems, loadBasket, saveBasket, setQty, stepOf, type Basket } from "./lib/basket.js";
 import { aed, qtyText } from "./lib/format.js";
@@ -53,6 +54,8 @@ const hashStore = (f: () => void) => (window.addEventListener("hashchange", f), 
 function useRoute() {
   const hash = useSyncExternalStore(hashStore, () => location.hash);
   const [slug = "", kind, token] = hash.replace(/^#\/?/, "").split("/");
+  // #/t/<token>: the QR code on a table; #/k/<token>: a self-order kiosk.
+  if ((slug === "t" || slug === "k") && kind) return { slug: "", dineIn: { kind: slug === "t" ? ("table" as const) : ("kiosk" as const), token: kind } };
   return { slug: decodeURIComponent(slug).toLowerCase(), token: kind === "order" ? token : undefined };
 }
 const go = (path: string) => {
@@ -61,11 +64,12 @@ const go = (path: string) => {
 };
 
 /** Names in Arabic when the business gave one. */
-const local = (x: { name: string; nameAr?: string | null }, lang: string) => (lang === "ar" && x.nameAr ? x.nameAr : x.name);
+export const local = (x: { name: string; nameAr?: string | null }, lang: string) => (lang === "ar" && x.nameAr ? x.nameAr : x.name);
 
 export function App() {
-  const { slug, token } = useRoute();
+  const { slug, token, dineIn } = useRoute();
   useLang();
+  if (dineIn) return <DineIn key={dineIn.token} kind={dineIn.kind} token={dineIn.token} />;
   if (!slug) return <Closed />;
   return token ? <OrderPage key={token} slug={slug} token={token} /> : <ShopPage key={slug} slug={slug} />;
 }
@@ -79,7 +83,7 @@ function LangToggle() {
   );
 }
 
-function Header({ title, sub }: { title: string; sub?: string }) {
+export function Header({ title, sub }: { title: string; sub?: string }) {
   return (
     <header className="top">
       <div className="top-text">
@@ -100,7 +104,7 @@ function Closed({ message }: { message?: string }) {
   );
 }
 
-function Problem({ text, onRetry }: { text: string; onRetry?: () => void }) {
+export function Problem({ text, onRetry }: { text: string; onRetry?: () => void }) {
   return (
     <div className="problem" role="alert">
       <span>{text}</span>

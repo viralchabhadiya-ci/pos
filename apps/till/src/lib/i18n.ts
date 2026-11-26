@@ -428,6 +428,16 @@ export const AR: Record<string, string> = {
   "Not ready": "غير جاهز",
   "Picked up": "استُلم",
   "Order {n}": "طلب {n}",
+  // Guest orders from table QR codes and kiosks
+  "Guest order": "طلب ضيف",
+  "That table is not on this till. Sync and try again.": "هذه الطاولة ليست على هذا الجهاز. زامن وحاول مرة أخرى.",
+  "Added to table {name}. Press Send for the kitchen.": "أُضيف إلى طاولة {name}. اضغط إرسال للمطبخ.",
+  "Kiosk number {n}": "رقم الكشك {n}",
+  "From the table QR": "من رمز الطاولة",
+  "To pay": "للدفع",
+  "Don't take": "لا تقبل",
+  "Add to the bill": "أضف إلى الفاتورة",
+  "Take payment": "استلم الدفع",
 };
 
 function load(): Lang {
