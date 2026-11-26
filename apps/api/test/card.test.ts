@@ -27,6 +27,15 @@ const start = (amount: number, extra: Record<string, unknown> = {}) =>
     payload: { id: randomUUID(), amount, orderId: randomUUID(), userId: ctx.data.cashierId, ...extra },
   });
 const status = (id: string) => ctx.app.inject({ method: "GET", url: `/card/payments/${id}`, headers: ctx.auth });
+// Polls until the simulated terminal answers, so a slow CI runner does not see "pending".
+const settled = async (id: string) => {
+  await wait(DELAY + 20);
+  for (let i = 0; ; i++) {
+    const res = await status(id);
+    if (res.json().status !== "pending" || i >= 50) return res;
+    await wait(40);
+  }
+};
 
 describe("card terminal", () => {
   it("refuses an integrated card payment when the till has no terminal", async () => {
@@ -53,8 +62,7 @@ describe("card terminal", () => {
     const res = await start(1000);
     expect(res.json()).toMatchObject({ status: "pending", amount: 1000 });
     const id = res.json().id;
-    await wait(DELAY + 20);
-    const done = (await status(id)).json();
+    const done = (await settled(id)).json();
     expect(done).toMatchObject({ status: "approved", cardLast4: expect.stringMatching(/^\d{4}$/), authCode: expect.any(String) });
   });
 
@@ -83,8 +91,7 @@ describe("card terminal", () => {
       const [a, b] = await Promise.all([start(2500, { id, orderId }), start(2500, { id, orderId })]);
       expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
       expect(starts).toBe(1);
-      await wait(DELAY + 20);
-      expect((await status(id)).json().status).toBe("approved");
+      expect((await settled(id)).json().status).toBe("approved");
     } finally {
       sim.start = realStart;
     }
@@ -92,8 +99,7 @@ describe("card terminal", () => {
 
   it("reports a decline with the bank's reason", async () => {
     const id = (await start(1013)).json().id;
-    await wait(DELAY + 20);
-    expect((await status(id)).json()).toMatchObject({ status: "declined", message: expect.stringContaining("insufficient") });
+    expect((await settled(id)).json()).toMatchObject({ status: "declined", message: expect.stringContaining("insufficient") });
   });
 
   it("marks a lost answer unknown and finds the real result on the next check", async () => {
@@ -102,8 +108,7 @@ describe("card terminal", () => {
     expect((await status(lost.id)).json().status).toBe("approved");
 
     const flaky = (await start(1016)).json();
-    await wait(DELAY + 20);
-    expect((await status(flaky.id)).json().status).toBe("unknown");
+    expect((await settled(flaky.id)).json().status).toBe("unknown");
     expect((await status(flaky.id)).json().status).toBe("unknown");
     expect((await status(flaky.id)).json().status).toBe("approved");
   });
@@ -128,8 +133,7 @@ describe("card terminal", () => {
     const order = makeOrder(ctx, sessionId, [{ variant: 0, qty: 2 }], { pay: "card" });
     const pay = order.payments[0]!;
     const card = (await start(pay.amount, { orderId: order.id })).json();
-    await wait(DELAY + 20);
-    await status(card.id);
+    await settled(card.id);
     pay.cardTransactionId = card.id;
     expect((await postOrders(ctx, [order]))[0]!.status).toBe("created");
     const linked = await ctx.db.query("SELECT card_transaction_id FROM payments WHERE id = $1", [pay.id]);
@@ -137,8 +141,7 @@ describe("card terminal", () => {
 
     const other = makeOrder(ctx, sessionId, [{ variant: 1, qty: 1 }], { pay: "card" });
     const cheap = (await start(50, { orderId: other.id })).json();
-    await wait(DELAY + 20);
-    await status(cheap.id);
+    await settled(cheap.id);
     other.payments[0]!.cardTransactionId = cheap.id;
     expect((await postOrders(ctx, [other]))[0]!.status).toBe("created");
     const flagged = await ctx.db.query("SELECT data FROM audit_log WHERE action = 'order.card_mismatch' AND entity_id = $1", [other.id]);
@@ -147,21 +150,18 @@ describe("card terminal", () => {
 
   it("refunds to the card, never more than was paid", async () => {
     const sale = (await start(3000)).json();
-    await wait(DELAY + 20);
-    await status(sale.id);
+    await settled(sale.id);
     const over = await start(3001, { kind: "refund", refundOf: sale.id });
     expect(over.json().error).toBe("over_refund");
     const part = (await start(1000, { kind: "refund", refundOf: sale.id })).json();
-    await wait(DELAY + 20);
-    expect((await status(part.id)).json()).toMatchObject({ status: "approved", kind: "refund" });
+    expect((await settled(part.id)).json()).toMatchObject({ status: "approved", kind: "refund" });
     expect((await start(2001, { kind: "refund", refundOf: sale.id })).json().error).toBe("over_refund");
     expect((await start(1000, { kind: "refund" })).statusCode).toBe(400);
   });
 
   it("lets only a manager mark a stranded charge as sorted", async () => {
     const sale = (await start(4000)).json();
-    await wait(DELAY + 20);
-    await status(sale.id);
+    await settled(sale.id);
     const resolve = (userId: string) =>
       ctx.app.inject({ method: "POST", url: `/card/payments/${sale.id}/resolve`, headers: ctx.auth, payload: { userId } });
     expect((await resolve(ctx.data.cashierId)).statusCode).toBe(403);
@@ -173,11 +173,9 @@ describe("card terminal", () => {
   it("lists card payments for reconciliation, flagging only charges still unaccounted for", async () => {
     // A stranded charge refunded back to the card in full needs nothing more.
     const stranded = (await start(1200)).json();
-    await wait(DELAY + 20);
-    await status(stranded.id);
+    await settled(stranded.id);
     const back = (await start(1200, { kind: "refund", refundOf: stranded.id })).json();
-    await wait(DELAY + 20);
-    await status(back.id);
+    await settled(back.id);
 
     const all = (await ctx.app.inject({ method: "GET", url: "/admin/card-transactions", headers: owner })).json();
     expect(all.count).toBeGreaterThan(5);
