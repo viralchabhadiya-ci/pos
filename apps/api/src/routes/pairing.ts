@@ -36,7 +36,7 @@ export async function pairingRoutes(app: FastifyInstance) {
         "INSERT INTO devices (id, register_id, name, role, token_hash) VALUES ($1, $2, $3, $4, $5)",
         [body.deviceId, pairing.register_id, body.deviceName, pairing.role, hash],
       );
-      return { registerId: pairing.register_id as string, role: pairing.role as "till" | "display" };
+      return { registerId: pairing.register_id as string, role: pairing.role as "till" | "display" | "staff" };
     });
     return { token, ...(await loadDeviceSetup(app.db, paired.registerId, paired.role)) };
   });

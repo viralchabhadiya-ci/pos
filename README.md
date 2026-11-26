@@ -17,6 +17,7 @@ Research: [Odoo POS Blueprint](https://claude.ai/artifact/1kkW4wY7pSKbTTkpX2akY4
 | `apps/hub` | Store hub: a small Node service on one PC in the shop. Tills connect to it; it forwards to the cloud, queues everything while the internet is down, lets tills find each other's sales offline, and drives the LAN receipt printer and cash drawer. |
 | `apps/backoffice` | Back office web app for owners and managers: sales dashboard, products and prices, categories, stock, staff and PINs, registers and device pairing, bill search and detail. Works on desktop and phone. |
 | `apps/owner` | Owner app: a phone-first PWA for owners and managers. Live sales, alerts, approving till requests, and the daily summary email. Installs to the home screen. |
+| `apps/staff` | Staff app: a phone PWA for the shop floor. Price check, stock counts, checking in deliveries and asking for shelf labels, with the phone camera as the scanner. |
 | `packages/escpos` | Printer-neutral receipt document and its ESC/POS encoding (text, rows, barcode, QR, cut, drawer kick) for 80 mm and 58 mm thermal printers. |
 
 ## Run it locally
@@ -33,6 +34,7 @@ pnpm dev:api                   # http://localhost:3000
 pnpm dev:till                  # http://localhost:5173
 pnpm dev:backoffice            # http://localhost:5174
 pnpm dev:owner                 # http://localhost:5175
+pnpm dev:staff                 # http://localhost:5176
 ```
 
 Open the till, enter the pairing code, sign in with PIN `1234` (cashier) and open a shift.
@@ -124,6 +126,25 @@ API on port 3000 (set `API_URL` to change it); a production build calls `VITE_AP
   footer (`|` starts a new line). Tills pick the changes up with their next catalog sync.
 
 Every change is written to the audit log with who made it.
+
+### Staff app
+
+A phone app for the shop floor (`apps/staff`, http://localhost:5176). Pair the phone once: back office →
+**Tills & devices → Pair a device**, pick *Staff phone* and type the code. Staff then sign in with their till PIN
+(five wrong PINs and the phone waits 5 minutes; closing the app signs them out). It needs the shop's Wi-Fi or data.
+
+- **Scanning:** the camera button reads barcodes and QR codes, with the phone's own reader where there is one
+  (Android Chrome) and a bundled ZXing reader elsewhere (iPhone). Typing a barcode, SKU or name always works.
+- **Price check:** price, VAT, stock in this store and the others, last delivery. Scale barcodes show the weight
+  and price on that label.
+- **Count:** open stock counts for the store. Each scan opens the number to type, or adds 1 per scan. The
+  expected figure is not shown. A manager completes the count in the back office.
+- **Deliveries:** orders marked as ordered for the store. Tick off what arrived (with expiry dates where the
+  product tracks them) and a manager books it in, which updates stock and the average cost.
+- **Labels:** *Ask for labels* on a price check. The back office shows the requests in Scales & labels, adds
+  them to the print list and marks them printed.
+
+A staff phone's token only works for `/staff` routes, never the till's.
 
 ### Promotions, coupons and price lists
 

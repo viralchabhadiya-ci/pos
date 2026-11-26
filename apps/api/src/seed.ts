@@ -180,7 +180,7 @@ export async function seed(
   });
 }
 
-export async function createPairingCode(db: Db, registerId: string, role: "till" | "display" = "till") {
+export async function createPairingCode(db: Db, registerId: string, role: "till" | "display" | "staff" = "till") {
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newPairingCode();
     const res = await db.query(

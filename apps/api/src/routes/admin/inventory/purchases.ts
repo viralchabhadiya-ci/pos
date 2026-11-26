@@ -182,6 +182,46 @@ const lockPo = (tx: Tx, ctx: AdminContext, id: string) =>
     "Purchase order",
   );
 
+export const ReceivePurchaseSchema = ReceivePoSchema;
+
+/** Books what arrived against an order and moves it to part received or received. Also used by the staff app. */
+export async function receivePurchaseOrder(tx: Tx, ctx: AdminContext, poId: string, b: z.infer<typeof ReceivePoSchema>) {
+  const po = await lockPo(tx, ctx, poId);
+  if (!["draft", "ordered", "partial"].includes(po.status)) throw wrongState(`${po.number} is ${po.status}; nothing more can be received`);
+  const { rows: lines } = await tx.query(
+    `SELECT id, variant_id AS "variantId", unit_cost AS "unitCost" FROM purchase_order_lines WHERE po_id = $1`,
+    [po.id],
+  );
+  const byId = new Map(lines.map((l) => [l.id as string, l]));
+  const seen = new Set<string>();
+  const items: ReceiveItem[] = b.lines.map((l) => {
+    const line = byId.get(l.lineId);
+    if (!line) throw bad("A line does not belong to this order");
+    if (seen.has(l.lineId)) throw bad("A line is listed twice");
+    seen.add(l.lineId);
+    return { ...l, variantId: line.variantId, unitCost: l.unitCost ?? line.unitCost, poLineId: l.lineId };
+  });
+  const grn = await receiveGoods(tx, ctx, { ...b, storeId: po.storeId, supplierId: po.supplierId, poId: po.id }, items);
+  for (const it of items) {
+    await tx.query("UPDATE purchase_order_lines SET qty_received = qty_received + $2, unit_cost = $3 WHERE id = $1", [
+      it.poLineId,
+      it.qty,
+      it.unitCost,
+    ]);
+  }
+  const { rows } = await tx.query(
+    "SELECT bool_and(qty_received >= qty_ordered) AS done FROM purchase_order_lines WHERE po_id = $1",
+    [po.id],
+  );
+  const status = rows[0].done ? "received" : "partial";
+  await tx.query(
+    `UPDATE purchase_orders SET status = $2, ordered_at = COALESCE(ordered_at, now()),
+            closed_at = CASE WHEN $2 = 'received' THEN now() END, updated_at = now() WHERE id = $1`,
+    [po.id, status],
+  );
+  return { ...grn, status };
+}
+
 export async function purchaseRoutes(app: FastifyInstance) {
   app.get("/purchase-orders", async (req) => {
     const ctx = await app.authAdmin(req);
@@ -314,42 +354,7 @@ export async function purchaseRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/purchase-orders/:id/receive", async (req) => {
     const ctx = await app.authAdmin(req);
     const b = ReceivePoSchema.parse(req.body);
-    return withTx(app.db, async (tx) => {
-      const po = await lockPo(tx, ctx, req.params.id);
-      if (!["draft", "ordered", "partial"].includes(po.status)) throw wrongState(`${po.number} is ${po.status}; nothing more can be received`);
-      const { rows: lines } = await tx.query(
-        `SELECT id, variant_id AS "variantId", unit_cost AS "unitCost" FROM purchase_order_lines WHERE po_id = $1`,
-        [po.id],
-      );
-      const byId = new Map(lines.map((l) => [l.id as string, l]));
-      const seen = new Set<string>();
-      const items: ReceiveItem[] = b.lines.map((l) => {
-        const line = byId.get(l.lineId);
-        if (!line) throw bad("A line does not belong to this order");
-        if (seen.has(l.lineId)) throw bad("A line is listed twice");
-        seen.add(l.lineId);
-        return { ...l, variantId: line.variantId, unitCost: l.unitCost ?? line.unitCost, poLineId: l.lineId };
-      });
-      const grn = await receiveGoods(tx, ctx, { ...b, storeId: po.storeId, supplierId: po.supplierId, poId: po.id }, items);
-      for (const it of items) {
-        await tx.query("UPDATE purchase_order_lines SET qty_received = qty_received + $2, unit_cost = $3 WHERE id = $1", [
-          it.poLineId,
-          it.qty,
-          it.unitCost,
-        ]);
-      }
-      const { rows } = await tx.query(
-        "SELECT bool_and(qty_received >= qty_ordered) AS done FROM purchase_order_lines WHERE po_id = $1",
-        [po.id],
-      );
-      const status = rows[0].done ? "received" : "partial";
-      await tx.query(
-        `UPDATE purchase_orders SET status = $2, ordered_at = COALESCE(ordered_at, now()),
-                closed_at = CASE WHEN $2 = 'received' THEN now() END, updated_at = now() WHERE id = $1`,
-        [po.id, status],
-      );
-      return { ...grn, status };
-    });
+    return withTx(app.db, (tx) => receivePurchaseOrder(tx, ctx, req.params.id, b));
   });
 
   /** Stops waiting for the rest of a part-delivered order (the supplier will not send it). */

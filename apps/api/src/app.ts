@@ -20,6 +20,7 @@ import { platformRoutes } from "./routes/platform.js";
 import { signupRoutes } from "./routes/signup.js";
 import { createProviders, type PaymentProvider } from "./payments/index.js";
 import { approvalRoutes } from "./routes/approvals.js";
+import { staffRoutes } from "./routes/staff.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
 import { publicRoutes } from "./public/routes.js";
@@ -41,7 +42,7 @@ export interface AdminContext {
 
 export interface DeviceContext {
   deviceId: string;
-  role: "till" | "display";
+  role: "till" | "display" | "staff";
   registerId: string;
   storeId: string;
   tenantId: string;
@@ -85,7 +86,8 @@ export async function buildApp(
       [hashToken(header.slice(7))],
     );
     const row = rows[0];
-    if (!row) throw unauthorized();
+    // A staff phone only reaches the staff app's routes (/staff), never the till's.
+    if (!row || row.role === "staff") throw unauthorized();
     return { deviceId: row.id, role: row.role, registerId: row.register_id, storeId: row.store_id, tenantId: row.tenant_id };
   });
 
@@ -147,6 +149,7 @@ export async function buildApp(
   await app.register(signupRoutes);
   await app.register(approvalRoutes);
   await app.register(tillEventRoutes);
+  await app.register(staffRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
   await app.register(publicRoutes);

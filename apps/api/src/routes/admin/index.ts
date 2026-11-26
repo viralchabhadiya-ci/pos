@@ -7,6 +7,7 @@ import { deviceRoutes } from "./devices.js";
 import { einvoicingRoutes } from "./einvoicing.js";
 import { loyaltyRoutes } from "./loyalty.js";
 import { scaleRoutes } from "./scales.js";
+import { labelRequestRoutes } from "./labelRequests.js";
 import { priceListRoutes } from "./priceLists.js";
 import { productCsvRoutes } from "./products-csv.js";
 import { ownerRoutes } from "./owner.js";
@@ -40,6 +41,7 @@ export async function adminRoutes(app: FastifyInstance) {
   await app.register(accountingRoutes);
   await app.register(loyaltyRoutes);
   await app.register(scaleRoutes);
+  await app.register(labelRequestRoutes);
   await app.register(hqRoutes);
   await app.register(developerRoutes);
 }

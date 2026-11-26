@@ -63,7 +63,7 @@ const ListSchema = z.object({
 });
 
 /** Stock is summed over every store, or over the stores in the uuid[] parameter named. */
-const productSelect = (stores?: string) => `
+export const productSelect = (stores?: string) => `
   SELECT p.id, v.id AS "variantId", p.name, p.name_ar AS "nameAr", p.category_id AS "categoryId", c.name AS "categoryName",
          p.uom, p.tax_id AS "taxId", v.price, v.cost, v.barcode, v.extra_barcodes AS "extraBarcodes", v.sku, v.plu,
          v.reorder_level AS "reorderLevel", p.active, p.updated_at AS "updatedAt", oh.qty AS "onHand"
@@ -72,7 +72,7 @@ const productSelect = (stores?: string) => `
     JOIN LATERAL (SELECT COALESCE(SUM(m.qty), 0) AS qty FROM stock_moves m
                    WHERE m.variant_id = v.id ${stores ? `AND (${stores}::uuid[] IS NULL OR m.store_id = ANY(${stores}::uuid[]))` : ""}) oh ON true
     LEFT JOIN categories c ON c.id = p.category_id`;
-const PRODUCT_SELECT = productSelect();
+export const PRODUCT_SELECT = productSelect();
 
 const empty = (s: string | null | undefined) => (s ? s : null);
 

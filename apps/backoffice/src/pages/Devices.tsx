@@ -80,7 +80,7 @@ export function Devices({ me }: { me: Me }) {
                           <span className={d.online ? "dot on" : "dot"} aria-hidden="true" />
                           <span className="dev-main">
                             <span className="cell-main">
-                              {d.name} <span className="muted small">· {d.role === "till" ? "Till" : "Customer display"}</span>
+                              {d.name} <span className="muted small">· {d.role === "till" ? "Till" : d.role === "staff" ? "Staff phone" : "Customer display"}</span>
                             </span>
                             <span className="cell-sub">{d.online ? "Online now" : `Last seen ${ago(d.lastSeenAt).toLowerCase()}`}</span>
                           </span>
@@ -127,7 +127,7 @@ export function Devices({ me }: { me: Me }) {
 }
 
 function PairDialog({ register, onClose }: { register: Register; onClose: () => void }) {
-  const [role, setRole] = useState<"till" | "display">("till");
+  const [role, setRole] = useState<"till" | "display" | "staff">("till");
   const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,9 +162,10 @@ function PairDialog({ register, onClose }: { register: Register; onClose: () => 
         <>
           <Field label="This device will be a">
             {(p) => (
-              <select {...p} value={role} onChange={(e) => setRole(e.target.value as "till" | "display")} autoFocus>
+              <select {...p} value={role} onChange={(e) => setRole(e.target.value as "till" | "display" | "staff")} autoFocus>
                 <option value="till">Till (for the cashier)</option>
                 <option value="display">Customer display</option>
+                <option value="staff">Staff phone (price check, counts, deliveries)</option>
               </select>
             )}
           </Field>
@@ -186,7 +187,7 @@ function PairDialog({ register, onClose }: { register: Register; onClose: () => 
       ) : (
         <>
           <ol className="steps">
-            <li>Open the till app on the new device.</li>
+            <li>{role === "staff" ? "Open the staff app on the phone." : "Open the till app on the new device."}</li>
             <li>Type this code on its pairing screen.</li>
           </ol>
           <p className={expired ? "pair-code expired" : "pair-code"} aria-live="polite">
