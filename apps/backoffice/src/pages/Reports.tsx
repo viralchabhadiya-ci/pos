@@ -4,25 +4,35 @@ import { EmptyState, ErrorState, SkeletonRows } from "../components/States.js";
 import { useToast } from "../components/Toast.js";
 import { api, download, errorText } from "../lib/api.js";
 import { aed, bp, money, qty } from "../lib/format.js";
+import type { Me } from "../lib/types.js";
 import { useLoad } from "../lib/useLoad.js";
+import { ReportSchedules } from "./ReportSchedules.js";
 
-type GroupBy = "product" | "category" | "cashier" | "payment" | "day";
-type Tab = GroupBy | "vat";
+type GroupBy = "product" | "category" | "cashier" | "payment" | "day" | "margin" | "margin_category" | "staff";
+type Tab = GroupBy | "vat" | "scheduled";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "product", label: "Products" },
   { id: "category", label: "Categories" },
+  { id: "margin", label: "Margins" },
+  { id: "margin_category", label: "Category margins" },
   { id: "cashier", label: "Cashiers" },
+  { id: "staff", label: "Cashier performance" },
   { id: "payment", label: "Payments" },
   { id: "day", label: "Days" },
   { id: "vat", label: "VAT return" },
+  { id: "scheduled", label: "Scheduled" },
 ];
 
 interface Column {
   key: string;
   label: string;
   money?: boolean;
+  bp?: boolean;
 }
+
+/** Plain counts that add up in the total row. */
+const COUNT_KEYS = ["qty", "orders", "count", "refunds", "voids", "noSales"];
 interface SalesReport {
   columns: Column[];
   rows: Record<string, string | number | null>[];
@@ -69,14 +79,19 @@ const KIND_LABEL: Record<VatRow["kind"], string> = {
   none: "No VAT set",
 };
 
-export function Reports() {
+export function Reports({ me }: { me: Me }) {
   const [tab, setTab] = useState<Tab>("product");
   const [range, setRange] = useState(() => presets()[2]!);
   const toast = useToast();
   const q = `from=${range.from}&to=${range.to}`;
 
-  const report = useLoad<SalesReport | VatReport>(
-    () => (tab === "vat" ? api<VatReport>(`/reports/vat?${q}`) : api<SalesReport>(`/reports/sales?${q}&groupBy=${tab}`)),
+  const report = useLoad<SalesReport | VatReport | null>(
+    () =>
+      tab === "scheduled"
+        ? Promise.resolve(null)
+        : tab === "vat"
+          ? api<VatReport>(`/reports/vat?${q}`)
+          : api<SalesReport>(`/reports/sales?${q}&groupBy=${tab}`),
     [tab, q],
   );
 
@@ -93,12 +108,12 @@ export function Reports() {
           <h1>Reports</h1>
           <p className="muted">Sales net of refunds, by store day. Download any report as CSV for Excel or your accountant.</p>
         </div>
-        <button type="button" className="btn" onClick={exportCsv} disabled={!report.data}>
+        <button type="button" className="btn" onClick={exportCsv} disabled={!report.data || tab === "scheduled"}>
           <Icon name="download" /> Download CSV
         </button>
       </header>
 
-      <div className="filters">
+      <div className="filters" hidden={tab === "scheduled"}>
         <div className="chips" role="group" aria-label="Quick dates">
           {presets().map((p) => (
             <button
@@ -153,7 +168,9 @@ export function Reports() {
       </div>
 
       <section id="report-panel" role="tabpanel" aria-labelledby={`tab-${tab}`} aria-busy={report.loading}>
-        {report.error ? (
+        {tab === "scheduled" ? (
+          <ReportSchedules me={me} />
+        ) : report.error ? (
           <ErrorState message={report.error} onRetry={report.reload} />
         ) : !report.data || report.loading ? (
           <SkeletonRows />
@@ -179,14 +196,30 @@ function SalesTable({ data }: { data: SalesReport }) {
       </EmptyState>
     );
   }
+  // Averages and rates do not add up, so their total cell stays empty; margin is worked out from the totals.
+  const averaged = new Set(["avgBill", "perHour"]);
   const totals = data.columns.map((c) =>
-    c.money || c.key === "qty" || c.key === "orders" || c.key === "count" || c.key === "refunds"
-      ? data.rows.reduce((n, r) => n + Number(r[c.key] ?? 0), 0)
-      : null,
+    (c.money && !averaged.has(c.key)) || COUNT_KEYS.includes(c.key) ? data.rows.reduce((n, r) => n + Number(r[c.key] ?? 0), 0) : null,
   );
-  const cell = (c: Column, v: string | number | null) => (c.money ? money(Number(v ?? 0)) : c.key === "qty" ? qty(Number(v ?? 0)) : (v ?? "—"));
-  const isNum = (c: Column) => c.money || ["qty", "orders", "count", "refunds"].includes(c.key);
+  const col = (key: string) => data.columns.findIndex((c) => c.key === key);
+  const marginAt = col("marginBp");
+  if (marginAt >= 0) {
+    const withCost = data.rows.reduce((n, r) => n + (r.cost === null ? 0 : Number(r.net ?? 0) - Number(r.noCostNet ?? 0)), 0);
+    const profit = totals[col("profit")] ?? 0;
+    totals[marginAt] = withCost ? Math.round((profit * 10_000) / withCost) : null;
+  }
+  const cell = (c: Column, v: string | number | null) =>
+    v === null && (c.money || c.bp) ? "—" : c.money ? money(Number(v ?? 0)) : c.bp ? bp(Number(v)) : c.key === "qty" ? qty(Number(v ?? 0)) : (v ?? "—");
+  const isNum = (c: Column) => c.money || c.bp || COUNT_KEYS.includes(c.key) || ["hours", "itemsPerBill"].includes(c.key);
+  const missingCost = marginAt >= 0 && data.rows.some((r) => r.cost === null || Number(r.noCostNet ?? 0) !== 0);
   return (
+    <>
+    {missingCost && (
+      <p className="muted small" role="note">
+        <Icon name="alert" /> Some products have no cost, so they show — and are left out of the margin. Add a cost on the product, or receive
+        stock with a cost in Inventory.
+      </p>
+    )}
     <div className="table-wrap">
       <table className="table">
         <caption className="sr-only">Sales report</caption>
@@ -218,13 +251,14 @@ function SalesTable({ data }: { data: SalesReport }) {
           <tr>
             {data.columns.map((c, i) => (
               <td key={c.key} className={[isNum(c) ? "num" : "", hideOnPhone(i, data.columns.length), "strong"].join(" ")}>
-                {i === 0 ? "Total" : totals[i] === null ? "" : c.money ? money(totals[i]!) : qty(totals[i]!)}
+                {i === 0 ? "Total" : totals[i] === null || totals[i] === undefined ? "" : c.bp ? bp(totals[i]!) : c.money ? money(totals[i]!) : qty(totals[i]!)}
               </td>
             ))}
           </tr>
         </tfoot>
       </table>
     </div>
+    </>
   );
 }
 

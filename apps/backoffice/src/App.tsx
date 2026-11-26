@@ -112,7 +112,7 @@ export function App() {
       case "sales":
         return route[1] ? <OrderDetail id={route[1]} /> : <Sales />;
       case "reports":
-        return <Reports />;
+        return <Reports me={me} />;
       case "accounting":
         return <Accounting me={me} tab={route[1]} />;
       case "einvoicing":

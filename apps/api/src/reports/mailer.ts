@@ -5,6 +5,7 @@ export interface MailMessage {
   subject: string;
   html: string;
   text: string;
+  attachments?: { filename: string; content: string; contentType: string }[];
 }
 
 export interface Mailer {
@@ -26,7 +27,7 @@ export class SmtpMailer implements Mailer {
   async send(msg: MailMessage) {
     // Each person gets their own copy, so recipients do not see each other's addresses.
     for (const to of msg.to) {
-      await this.t.sendMail({ from: this.from, to, subject: msg.subject, html: msg.html, text: msg.text });
+      await this.t.sendMail({ from: this.from, to, subject: msg.subject, html: msg.html, text: msg.text, attachments: msg.attachments });
     }
   }
 }
