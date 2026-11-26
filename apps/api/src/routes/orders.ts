@@ -169,6 +169,8 @@ async function storeOrder(tx: Tx, device: DeviceContext, order: OrderSync): Prom
   }
   if (!isRefund) await recordPromotions(tx, device, order, totals.lines.reduce((s, l) => s + l.promoDiscount, 0));
 
+  if (order.webOrderId && !isRefund) await handOverWebOrder(tx, device, order.id, order.webOrderId, order.cashierId);
+
   // Webhooks go out once the order is saved; the payload is the same one GET /v1/orders/:id returns.
   await emitEvent(tx, device.tenantId, isRefund ? "order.refunded" : "order.created", async () => loadOrder(tx, device.tenantId, order.id));
   if (!isRefund) {
@@ -469,4 +471,24 @@ export async function orderRoutes(app: FastifyInstance) {
     );
     return { orders: rows };
   });
+}
+
+/**
+ * A click-and-collect order paid for at the till. The sale is already final, so problems
+ * (an order cancelled meanwhile, or one already handed over) are logged rather than refused.
+ */
+async function handOverWebOrder(tx: Tx, device: DeviceContext, orderId: string, webOrderId: string, cashierId: string) {
+  const { rows } = await tx.query("SELECT id, number, status, order_id FROM web_orders WHERE id = $1 AND tenant_id = $2 FOR UPDATE", [
+    webOrderId,
+    device.tenantId,
+  ]);
+  const w = rows[0];
+  if (!w) return;
+  if (w.order_id && w.order_id !== orderId) {
+    await audit(tx, device, cashierId, "web_order.collected_twice", "web_order", w.id, { number: w.number, orderId });
+    return;
+  }
+  if (w.status === "cancelled") await audit(tx, device, cashierId, "web_order.collected_after_cancel", "web_order", w.id, { number: w.number });
+  await tx.query("UPDATE orders SET web_order_id = $2 WHERE id = $1", [orderId, w.id]);
+  await tx.query("UPDATE web_orders SET status = 'collected', collected_at = now(), order_id = $2 WHERE id = $1", [w.id, orderId]);
 }

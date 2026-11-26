@@ -49,6 +49,8 @@ export const OrderSyncSchema = z.object({
   cashierId: z.string().uuid(),
   customerId: z.string().uuid().nullable().default(null),
   refundOfOrderId: z.string().uuid().nullable().default(null),
+  /** The online order this sale hands over to the customer (click-and-collect). */
+  webOrderId: z.string().uuid().nullish(),
   orderDiscountBp: z.number().int().min(0).max(10_000).default(0),
   createdAt: z.string().datetime(),
   lines: z.array(OrderLineSchema).min(1).max(500),

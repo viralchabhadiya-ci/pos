@@ -144,6 +144,7 @@ export async function completeOrder(
       cashierId,
       customerId: cart.customerId,
       refundOfOrderId: cart.refundOfOrderId,
+      ...(cart.webOrderId ? { webOrderId: cart.webOrderId } : {}),
       orderDiscountBp: cart.orderDiscountBp,
       createdAt: new Date().toISOString(),
       lines: cart.lines.map(({ uom: _uom, listPrice: _list, ...l }) => ({

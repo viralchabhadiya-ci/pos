@@ -11,7 +11,8 @@
     "dev:hub": "pnpm --filter @pos/hub dev",
     "dev:backoffice": "pnpm --filter @pos/backoffice dev",
     "dev:owner": "pnpm --filter @pos/owner dev",
-    "dev:staff": "pnpm --filter @pos/staff dev"
+    "dev:staff": "pnpm --filter @pos/staff dev",
+    "dev:shop": "pnpm --filter @pos/shop dev"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

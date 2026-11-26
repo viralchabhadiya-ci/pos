@@ -22,6 +22,8 @@ import { createProviders, type PaymentProvider } from "./payments/index.js";
 import { approvalRoutes } from "./routes/approvals.js";
 import { staffRoutes } from "./routes/staff.js";
 import { unsubscribeRoutes } from "./routes/unsubscribe.js";
+import { shopRoutes } from "./routes/shop.js";
+import { webOrderTillRoutes } from "./routes/webOrders.js";
 import { tillEventRoutes } from "./routes/tillEvents.js";
 import { createMailer, type Mailer } from "./reports/mailer.js";
 import { publicRoutes } from "./public/routes.js";
@@ -155,6 +157,8 @@ export async function buildApp(
   await app.register(tillEventRoutes);
   await app.register(staffRoutes);
   await app.register(unsubscribeRoutes);
+  await app.register(shopRoutes);
+  await app.register(webOrderTillRoutes);
   await app.register(adminRoutes, { prefix: "/admin" });
   await app.register(platformRoutes, { prefix: "/platform" });
   await app.register(publicRoutes);

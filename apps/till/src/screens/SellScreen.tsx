@@ -40,6 +40,8 @@ import { CustomerDialog } from "./CustomerDialog.js";
 import { PaymentDialog } from "./PaymentDialog.js";
 import { ReceiptView } from "./ReceiptView.js";
 import { RefundDialog } from "./RefundDialog.js";
+import { useWebOrders, WebOrdersDialog } from "./WebOrdersDialog.js";
+import { useSyncStatus } from "../lib/useSync.js";
 
 type PadMode = "qty" | "disc" | "price";
 const MODE_LABEL: Record<PadMode, string> = { qty: "Qty", disc: "% Disc", price: "Price" };
@@ -72,6 +74,10 @@ export function SellScreen({ setup, user, session }: Props) {
   const [showCustomer, setShowCustomer] = useState(false);
   const [showCoupon, setShowCoupon] = useState(false);
   const [showGiftCard, setShowGiftCard] = useState(false);
+  const [showWebOrders, setShowWebOrders] = useState(false);
+  const { online } = useSyncStatus();
+  const webOrders = useWebOrders(online);
+  const newWebOrders = webOrders.orders?.filter((o) => o.status === "new").length ?? 0;
   const loyalty = useLoyalty();
   // Happy-hour promotions start and stop by the clock, so the sale is re-priced each minute.
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
@@ -375,6 +381,12 @@ export function SellScreen({ setup, user, session }: Props) {
             <Icon name="refund" />
             {t("Refund")}
           </button>
+          {(webOrders.orders?.length ?? 0) > 0 && (
+            <button type="button" className="btn outline" onClick={() => setShowWebOrders(true)}>
+              <Icon name="online" />
+              {t("Online orders")} <span className={newWebOrders ? "count" : "count quiet"}>{webOrders.orders!.length}</span>
+            </button>
+          )}
         </div>
         <nav className="cats" aria-label={t("Categories")}>
           <button type="button" className={categoryId === null ? "chip on" : "chip"} aria-pressed={categoryId === null} onClick={() => setCategoryId(null)}>
@@ -423,7 +435,7 @@ export function SellScreen({ setup, user, session }: Props) {
 
       <section className="cart" aria-label={t("Current sale")}>
         <div className={isRefund ? "cart-head refund" : "cart-head"}>
-          <h2>{isRefund ? t("Refund") : t("Current sale")}</h2>
+          <h2>{isRefund ? t("Refund") : cart.webOrderNumber ? t("Online order {n}", { n: cart.webOrderNumber }) : t("Current sale")}</h2>
           <span className="badge">{itemCount(cart.lines.length)}</span>
         </div>
         {!isRefund && (
@@ -649,6 +661,22 @@ export function SellScreen({ setup, user, session }: Props) {
           onApprove={(managerId, approvalId) => {
             approval.apply(managerId, approvalId);
             setApproval(null);
+          }}
+        />
+      )}
+      {showWebOrders && (
+        <WebOrdersDialog
+          orders={webOrders.orders}
+          error={webOrders.error}
+          reload={webOrders.reload}
+          items={items ?? []}
+          userId={user.id}
+          busy={cart.lines.length > 0}
+          onClose={() => setShowWebOrders(false)}
+          onRingUp={(c) => {
+            setShowWebOrders(false);
+            setCart(c);
+            setSelected(null);
           }}
         />
       )}
