@@ -194,6 +194,34 @@ Gift card and Points payment methods.
 - The demo data has a customer (Fatima Al Mansoori, 0501234567, 2,500 points) and a card `GIFT-DEMO-100`
   with AED 100 on it. Migration `070_loyalty.sql`.
 
+### Customers and marketing
+
+Back office, **Customers** (birthday, tags and consent per channel on each customer) and **Marketing**
+(`#/marketing`, head office only). On the till, a new customer with a mobile number has a tick box for
+"agrees to get offers by SMS and WhatsApp".
+
+- **Consent first.** Nothing goes to a customer who has not said yes on that channel (email, SMS,
+  WhatsApp). The record keeps when and where consent last changed: till, back office (or the API) or the
+  customer's own unsubscribe link. Consent is checked again just before each message is sent.
+- **Segments** pick customers by rules, all of which must hold: spent at least / at most, number of bills,
+  over the last N days, came in within N days, not back for N days, never bought, points, tags, birthday
+  this month. The count for each channel updates as the rules change, and is worked out again when a
+  campaign goes out.
+- **Campaigns** go once to a segment (now or at a time), or every day as a **birthday offer** from 10:00 on
+  the customer's birthday, once a year (29 February birthdays get theirs on the 28th). Messages fill in
+  `{name}` (first name), `{points}`, `{coupon}` (a code from Promotions) and `{shop}`. Sending happens
+  only between 09:00 and 21:00 in the shop's time. A failed send is tried 3 times. The campaign page shows
+  sent, failed and skipped messages, and how many customers bought within 7 days and what they spent.
+- **Unsubscribe:** every message carries a link (`/u/<token>`, in the text for SMS and WhatsApp, in the
+  footer and the `List-Unsubscribe` header for email). The page asks first, in English and Arabic, so mail
+  scanners cannot unsubscribe people by opening the link. Campaigns will not start until `PUBLIC_URL` is set.
+- **Providers:** email uses the same mail server as reports (`SMTP_URL`). SMS uses Twilio
+  (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SMS_FROM`: a sender ID registered for the UAE). WhatsApp
+  uses Meta's Cloud API (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, and `WHATSAPP_TEMPLATE`, an approved
+  marketing template whose body is one `{{1}}`; `WHATSAPP_TEMPLATE_LANG` defaults to `en`). Without them,
+  messages are written to the server log and the Marketing page says so. Run one API process: the worker
+  that sends campaigns runs inside it. Migration `122_crm.sql`.
+
 ### Scales and labels
 
 Back office, **Scales & labels** (`#/labels`), the **Scale item code** field on a product, and on the

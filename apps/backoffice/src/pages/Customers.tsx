@@ -146,7 +146,25 @@ export function Customers({ me }: { me: Me }) {
   );
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAYS_IN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const CONSENT_FROM: Record<string, string> = { till: "at the till", back_office: "in the back office", unsubscribe_link: "by the customer's unsubscribe link" };
+
+/** Editing needs the full record (birthday, tags, consent), which the list does not carry. */
 function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | null; onClose: () => void; onSaved: () => void }) {
+  const full = useLoad(() => (customer ? api<Customer>(`/customers/${customer.id}`) : Promise.resolve(null)), [customer?.id]);
+  if (customer && !full.data) {
+    return (
+      <Modal onClose={onClose} label={`Edit ${customer.name}`}>
+        <h2>Edit customer</h2>
+        {full.error ? <ErrorState message={full.error} onRetry={full.reload} /> : <SkeletonRows rows={4} />}
+      </Modal>
+    );
+  }
+  return <CustomerForm customer={full.data ?? null} onClose={onClose} onSaved={onSaved} />;
+}
+
+function CustomerForm({ customer, onClose, onSaved }: { customer: Customer | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [form, setForm] = useState({
     name: customer?.name ?? "",
@@ -154,12 +172,17 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
     email: customer?.email ?? "",
     trn: customer?.trn ?? "",
     priceListId: customer?.priceListId ?? "",
+    birthMonth: customer?.birthMonth ? String(customer.birthMonth) : "",
+    birthDay: customer?.birthDay ? String(customer.birthDay) : "",
+    tags: (customer?.tags ?? []).join(", "),
   });
+  const [consent, setConsent] = useState(customer?.consent ?? { email: false, sms: false, whatsapp: false });
   const lists = useLoad(() => api<{ priceLists: PriceList[] }>("/price-lists"), []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const maxDay = form.birthMonth ? DAYS_IN[Number(form.birthMonth) - 1]! : 31;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -167,6 +190,9 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
     if (!form.name.trim()) errs.name = "Enter the customer's name.";
     if (form.trn.trim() && !/^\d{15}$/.test(form.trn.trim())) errs.trn = "A TRN has 15 digits.";
     if (form.email.trim() && !/^\S+@\S+\.\S+$/.test(form.email.trim())) errs.email = "Enter an email like name@example.com";
+    if (!!form.birthMonth !== !!form.birthDay) errs.birthMonth = "Pick both the day and the month, or neither.";
+    if (consent.email && !form.email.trim()) errs.email = "Add an email address, or untick offers by email.";
+    if ((consent.sms || consent.whatsapp) && !form.phone.trim()) errs.phone = "Add a mobile number, or untick offers by SMS and WhatsApp.";
     setErrors(errs);
     if (Object.keys(errs).length) {
       document.getElementById(`cf-${Object.keys(errs)[0]}`)?.focus();
@@ -174,7 +200,18 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
     }
     setBusy(true);
     setFormError(null);
-    const body = { name: form.name, phone: form.phone.trim() || null, email: form.email.trim() || null, trn: form.trn.trim() || null, priceListId: form.priceListId || null };
+    const tags = [...new Set(form.tags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean))];
+    const body = {
+      name: form.name,
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      trn: form.trn.trim() || null,
+      priceListId: form.priceListId || null,
+      birthMonth: form.birthMonth ? Number(form.birthMonth) : null,
+      birthDay: form.birthDay ? Number(form.birthDay) : null,
+      tags,
+      consent,
+    };
     try {
       if (customer) await api(`/customers/${customer.id}`, { method: "PUT", body });
       else await api("/customers", { body });
@@ -219,6 +256,67 @@ function CustomerDialog({ customer, onClose, onSaved }: { customer: Customer | n
             )}
           </Field>
         )}
+        <fieldset className="plain-fieldset">
+          <legend className="field-label">Birthday</legend>
+          <div className="form-grid">
+            <Field id="cf-birthMonth" label="Month" error={errors.birthMonth}>
+              {(p) => (
+                <select
+                  {...p}
+                  value={form.birthMonth}
+                  onChange={(e) => {
+                    const m = e.target.value;
+                    // 31 April does not exist, so the day is cleared when it no longer fits.
+                    setForm((f) => ({ ...f, birthMonth: m, birthDay: m && Number(f.birthDay) > DAYS_IN[Number(m) - 1]! ? "" : f.birthDay }));
+                  }}
+                >
+                  <option value="">Not given</option>
+                  {MONTHS.map((m, i) => (
+                    <option key={m} value={i + 1}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+            <Field id="cf-birthDay" label="Day">
+              {(p) => (
+                <select {...p} value={form.birthDay} onChange={(e) => set("birthDay", e.target.value)}>
+                  <option value="">Not given</option>
+                  {Array.from({ length: maxDay }, (_, i) => (
+                    <option key={i} value={i + 1}>
+                      {i + 1}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Field>
+          </div>
+        </fieldset>
+        <Field id="cf-tags" label="Tags" hint="Separate with commas, e.g. vip, wholesale. Segments in Marketing can pick customers by tag.">
+          {(p) => <input {...p} value={form.tags} onChange={(e) => set("tags", e.target.value)} maxLength={400} />}
+        </Field>
+        <fieldset className="plain-fieldset">
+          <legend className="field-label">Offers and news</legend>
+          <p className="hint">Tick only what the customer agreed to. Receipts are sent either way.</p>
+          {(
+            [
+              ["email", "By email"],
+              ["sms", "By SMS"],
+              ["whatsapp", "By WhatsApp"],
+            ] as const
+          ).map(([k, label]) => (
+            <label className="check" key={k}>
+              <input type="checkbox" checked={consent[k]} onChange={(e) => setConsent((c) => ({ ...c, [k]: e.target.checked }))} />
+              <span>{label}</span>
+            </label>
+          ))}
+          {customer?.consentAt && (
+            <p className="hint">
+              Last changed {CONSENT_FROM[customer.consentSource ?? ""] ?? ""} on {dateTime(customer.consentAt)}.
+            </p>
+          )}
+        </fieldset>
         {formError && (
           <p className="form-error" role="alert">
             <Icon name="alert" /> {formError}

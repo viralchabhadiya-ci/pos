@@ -11,6 +11,8 @@ const CustomerSchema = z.object({
   phone: z.string().max(30).optional(),
   email: z.string().email().optional(),
   trn: z.string().max(20).optional(),
+  /** The customer said yes to offers by SMS and WhatsApp at the till. */
+  marketingConsent: z.boolean().optional(),
 });
 
 export async function customerRoutes(app: FastifyInstance) {
@@ -49,9 +51,10 @@ export async function customerRoutes(app: FastifyInstance) {
     const c = CustomerSchema.parse(req.body);
     await withTx(app.db, async (tx) => {
       const inserted = await tx.query(
-        `INSERT INTO customers (id, tenant_id, name, phone, email, trn) VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO customers (id, tenant_id, name, phone, email, trn, consent_email, consent_sms, consent_whatsapp, consent_at, consent_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7 AND $5::text IS NOT NULL, $7, $7, CASE WHEN $7 THEN now() END, CASE WHEN $7 THEN 'till' END)
          ON CONFLICT (id) DO NOTHING`,
-        [c.id, device.tenantId, c.name, c.phone ?? null, c.email ?? null, c.trn ?? null],
+        [c.id, device.tenantId, c.name, c.phone ?? null, c.email ?? null, c.trn ?? null, c.marketingConsent ?? false],
       );
       if (inserted.rowCount) await emitEvent(tx, device.tenantId, "customer.created", async () => loadCustomer(tx, device.tenantId, c.id));
     });

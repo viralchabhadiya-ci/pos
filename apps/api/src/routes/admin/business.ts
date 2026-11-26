@@ -23,7 +23,19 @@ export const CustomerSchema = z.object({
     .nullish(),
   /** Their own prices (wholesale, staff); null for normal prices. */
   priceListId: z.string().uuid().nullish(),
+  /** Leave out to keep what is recorded; null clears. */
+  birthMonth: z.number().int().min(1).max(12).nullish(),
+  birthDay: z.number().int().min(1).max(31).nullish(),
+  tags: z.array(z.string().trim().toLowerCase().min(1).max(40)).max(20).optional(),
+  /** Marketing consent per channel; leave out to keep what is recorded. */
+  consent: z.object({ email: z.boolean(), sms: z.boolean(), whatsapp: z.boolean() }).optional(),
 });
+
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function checkBirthday(b: { birthMonth?: number | null; birthDay?: number | null }) {
+  if (b.birthDay && !b.birthMonth) throw new HttpError(400, "bad_request", "Pick the month of the birthday");
+  if (b.birthMonth && b.birthDay && b.birthDay > MONTH_DAYS[b.birthMonth - 1]!) throw new HttpError(400, "bad_request", "That month does not have that many days");
+}
 
 const PageSchema = z.object({
   q: z.string().trim().max(100).optional(),
@@ -83,6 +95,7 @@ export async function saveCustomer(db: Db, ctx: AdminContext, id: string | null,
     ]);
     if (rowCount) throw new HttpError(409, "phone_taken", "Another customer has this phone number");
   }
+  checkBirthday(body);
   if (body.priceListId) {
     const { rowCount } = await db.query("SELECT 1 FROM price_lists WHERE id = $1 AND tenant_id = $2", [body.priceListId, ctx.tenantId]);
     if (!rowCount) throw new HttpError(400, "bad_request", "That price list does not exist");
@@ -92,21 +105,31 @@ export async function saveCustomer(db: Db, ctx: AdminContext, id: string | null,
     const created = !id;
     if (!id) {
       id = randomUUID();
-      await tx.query("INSERT INTO customers (id, tenant_id, name, phone, email, trn, price_list_id) VALUES ($1, $2, $3, $4, $5, $6, $7)", [
-        id,
-        ctx.tenantId,
-        body.name,
-        ...values,
-      ]);
+      await tx.query(
+        `INSERT INTO customers (id, tenant_id, name, phone, email, trn, price_list_id, birth_month, birth_day, tags,
+                               consent_email, consent_sms, consent_whatsapp, consent_at, consent_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $14 THEN now() END, CASE WHEN $14 THEN 'back_office' END)`,
+        [id, ctx.tenantId, body.name, ...values, body.birthMonth ?? null, body.birthDay ?? null, body.tags ?? [], body.consent?.email ?? false,
+          body.consent?.sms ?? false, body.consent?.whatsapp ?? false, !!body.consent],
+      );
       await adminAudit(tx, ctx, "customer.create", "customer", id, { name: body.name });
     } else {
       const res = await tx.query(
-        `UPDATE customers SET name = $3, phone = $4, email = $5, trn = $6, price_list_id = $7, updated_at = now()
+        `UPDATE customers SET name = $3, phone = $4, email = $5, trn = $6, price_list_id = $7,
+                birth_month = CASE WHEN $8 THEN $9 ELSE birth_month END, birth_day = CASE WHEN $8 THEN $10 ELSE birth_day END,
+                tags = COALESCE($11, tags),
+                consent_at = CASE WHEN $12::boolean IS NOT NULL AND (consent_email, consent_sms, consent_whatsapp) IS DISTINCT FROM ($12, $13, $14)
+                                  THEN now() ELSE consent_at END,
+                consent_source = CASE WHEN $12::boolean IS NOT NULL AND (consent_email, consent_sms, consent_whatsapp) IS DISTINCT FROM ($12, $13, $14)
+                                      THEN 'back_office' ELSE consent_source END,
+                consent_email = COALESCE($12, consent_email), consent_sms = COALESCE($13, consent_sms),
+                consent_whatsapp = COALESCE($14, consent_whatsapp), updated_at = now()
           WHERE id = $1 AND tenant_id = $2`,
-        [id, ctx.tenantId, body.name, ...values],
+        [id, ctx.tenantId, body.name, ...values, body.birthMonth !== undefined || body.birthDay !== undefined, body.birthMonth ?? null,
+          body.birthDay ?? null, body.tags ?? null, body.consent?.email ?? null, body.consent?.sms ?? null, body.consent?.whatsapp ?? null],
       );
       if (!res.rowCount) throw notFound("Customer");
-      await adminAudit(tx, ctx, "customer.update", "customer", id, { name: body.name });
+      await adminAudit(tx, ctx, "customer.update", "customer", id, { name: body.name, ...(body.consent ? { consent: body.consent } : {}) });
     }
     const saved = id;
     await emitEvent(tx, ctx.tenantId, created ? "customer.created" : "customer.updated", async () => loadCustomer(tx, ctx.tenantId, saved));
@@ -150,7 +173,10 @@ export async function businessRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/customers/:id", async (req) => {
     const ctx = await app.authAdmin(req);
     const { rows } = await app.db.query(
-      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName", c.points
+      `SELECT c.id, c.name, c.phone, c.email, c.trn, c.price_list_id AS "priceListId", pl.name AS "priceListName", c.points,
+              c.birth_month AS "birthMonth", c.birth_day AS "birthDay", c.tags,
+              json_build_object('email', c.consent_email, 'sms', c.consent_sms, 'whatsapp', c.consent_whatsapp) AS consent,
+              c.consent_at AS "consentAt", c.consent_source AS "consentSource"
          FROM customers c LEFT JOIN price_lists pl ON pl.id = c.price_list_id WHERE c.id = $1 AND c.tenant_id = $2`,
       [req.params.id, ctx.tenantId],
     );
